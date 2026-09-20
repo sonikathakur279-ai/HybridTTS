@@ -24,9 +24,16 @@ class ModelRegistryManager private constructor(context: Context) {
         private const val KEY_ACTIVE_MODEL = "key_active_model"
         private const val KEY_CUSTOM_OVERRIDE = "key_custom_override"
 
-        // Default stable models
-        const val DEFAULT_MODEL = "gemini-2.0-flash"
-        const val FALLBACK_MODEL = "gemini-1.5-flash"
+        // Official Google AI Studio Text-to-Speech Preview Models
+        const val MODEL_GEMINI_3_1_FLASH_TTS = "gemini-3.1-flash-tts-preview"
+        const val MODEL_GEMINI_2_5_FLASH_TTS = "gemini-2.5-flash-preview-tts"
+        const val MODEL_GEMINI_2_5_PRO_TTS = "gemini-2.5-pro-preview-tts"
+
+        val SUPPORTED_TTS_MODELS = listOf(
+            MODEL_GEMINI_3_1_FLASH_TTS,
+            MODEL_GEMINI_2_5_FLASH_TTS,
+            MODEL_GEMINI_2_5_PRO_TTS
+        )
 
         @Volatile
         private var instance: ModelRegistryManager? = null
@@ -41,7 +48,11 @@ class ModelRegistryManager private constructor(context: Context) {
     fun getActiveModel(): String {
         val custom = prefs.getString(KEY_CUSTOM_OVERRIDE, "") ?: ""
         if (custom.isNotBlank()) return custom.trim()
-        return prefs.getString(KEY_ACTIVE_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
+        return prefs.getString(KEY_ACTIVE_MODEL, MODEL_GEMINI_3_1_FLASH_TTS) ?: MODEL_GEMINI_3_1_FLASH_TTS
+    }
+
+    fun setActiveModel(modelId: String) {
+        prefs.edit().putString(KEY_ACTIVE_MODEL, modelId.trim()).apply()
     }
 
     fun setCustomModelOverride(customId: String) {
@@ -52,52 +63,25 @@ class ModelRegistryManager private constructor(context: Context) {
         prefs.edit().remove(KEY_CUSTOM_OVERRIDE).apply()
     }
 
-    suspend fun discoverAvailableModels(apiKey: String): List<String> {
+    suspend fun testConnection(apiKey: String, modelId: String): Result<String> {
         return withContext(Dispatchers.IO) {
-            val discovered = mutableListOf<String>()
             try {
-                val url = "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
+                val startTime = System.currentTimeMillis()
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelId?key=$apiKey"
                 val request = Request.Builder().url(url).get().build()
                 val response = httpClient.newCall(request).execute()
+                val latency = System.currentTimeMillis() - startTime
 
                 if (response.isSuccessful) {
-                    val bodyString = response.body?.string() ?: ""
-                    val json = JSONObject(bodyString)
-                    val modelsArray = json.optJSONArray("models")
-
-                    if (modelsArray != null) {
-                        for (i in 0 until modelsArray.length()) {
-                            val modelObj = modelsArray.getJSONObject(i)
-                            val name = modelObj.optString("name", "")
-                            // Name format is "models/gemini-2.0-flash"
-                            val cleanName = name.removePrefix("models/")
-                            val supportedMethods = modelObj.optJSONArray("supportedGenerationMethods")
-                            var canGenerate = false
-                            if (supportedMethods != null) {
-                                for (j in 0 until supportedMethods.length()) {
-                                    if (supportedMethods.getString(j) == "generateContent") {
-                                        canGenerate = true
-                                        break
-                                    }
-                                }
-                            }
-                            if (canGenerate && cleanName.contains("gemini", ignoreCase = true)) {
-                                discovered.add(cleanName)
-                            }
-                        }
-                    }
+                    Result.success("HTTP 200 OK • Model Ready (${latency}ms)")
+                } else {
+                    val code = response.code
+                    val errorBody = response.body?.string() ?: ""
+                    Result.failure(Exception("Error $code: $errorBody"))
                 }
-            } catch (_: Exception) {
-                // Return default catalog if network discovery encounters an issue
+            } catch (e: Exception) {
+                Result.failure(e)
             }
-
-            if (discovered.isEmpty()) {
-                discovered.add(DEFAULT_MODEL)
-                discovered.add(FALLBACK_MODEL)
-                discovered.add("gemini-2.5-flash-preview-tts")
-            }
-
-            discovered
         }
     }
 }
