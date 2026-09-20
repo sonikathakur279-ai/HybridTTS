@@ -3,6 +3,7 @@ package com.hybridtts.ui.screens
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,11 +25,13 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +49,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,18 +72,23 @@ import com.hybridtts.ui.theme.StatusError
 import com.hybridtts.ui.theme.StatusWarning
 import com.hybridtts.ui.theme.TextPrimary
 import com.hybridtts.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val keyPool = remember { KeyPoolManager.getInstance(context) }
     val modelRegistry = remember { ModelRegistryManager.getInstance(context) }
 
-    var selectedEngineIndex by remember { mutableIntStateOf(0) } // Set Engine 1 for Day 3 verification
+    var selectedEngineIndex by remember { mutableIntStateOf(0) }
     var newApiKeyInput by remember { mutableStateOf("") }
     var keyList by remember { mutableStateOf<List<ApiKeyEntity>>(emptyList()) }
     var activeModelName by remember { mutableStateOf(modelRegistry.getActiveModel()) }
+
+    var isCheckingConnection by remember { mutableStateOf(false) }
+    var connectionCheckStatus by remember { mutableStateOf("") }
 
     var cpuThreads by remember { mutableFloatStateOf(2f) }
     var thermalProtection by remember { mutableStateOf(true) }
@@ -151,6 +160,156 @@ fun SettingsScreen() {
             }
         }
 
+        // Dedicated Google AI Studio TTS Model Selector Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkCard),
+            border = BorderStroke(1.dp, BorderSubtle)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "GOOGLE AI STUDIO TTS MODEL",
+                        color = AccentCyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = DarkSurface,
+                        border = BorderStroke(1.dp, BorderSubtle)
+                    ) {
+                        Text(
+                            text = "3 PREVIEW MODELS",
+                            color = AccentEmerald,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                ModelRegistryManager.SUPPORTED_TTS_MODELS.forEach { modelId ->
+                    val isSelected = activeModelName == modelId
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .background(
+                                if (isSelected) DarkSurface else PureBlack,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (isSelected) AccentCyan else BorderSubtle,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .clickable {
+                                activeModelName = modelId
+                                modelRegistry.setActiveModel(modelId)
+                                connectionCheckStatus = ""
+                            }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(if (isSelected) AccentCyan else BorderSubtle, CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = when (modelId) {
+                                    ModelRegistryManager.MODEL_GEMINI_3_1_FLASH_TTS -> "Gemini 3.1 Flash TTS Preview (Recommended)"
+                                    ModelRegistryManager.MODEL_GEMINI_2_5_FLASH_TTS -> "Gemini 2.5 Flash TTS Preview"
+                                    ModelRegistryManager.MODEL_GEMINI_2_5_PRO_TTS -> "Gemini 2.5 Pro TTS Preview"
+                                    else -> modelId
+                                },
+                                color = if (isSelected) TextPrimary else TextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = modelId,
+                                color = if (isSelected) AccentCyan else TextSecondary,
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Connection & Auto-Checker Test Button
+                Button(
+                    onClick = {
+                        val activeKey = keyPool.getNextActiveKey()
+                        if (activeKey == null) {
+                            Toast.makeText(context, "Please add an API key first!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isCheckingConnection = true
+                        connectionCheckStatus = "Testing handshake with Google AI Studio..."
+
+                        scope.launch {
+                            val result = modelRegistry.testConnection(activeKey, activeModelName)
+                            isCheckingConnection = false
+                            connectionCheckStatus = result.fold(
+                                onSuccess = { it },
+                                onFailure = { "Handshake Failed: ${it.localizedMessage}" }
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DarkSurface,
+                        contentColor = AccentEmerald
+                    ),
+                    border = BorderStroke(1.dp, AccentEmerald)
+                ) {
+                    if (isCheckingConnection) {
+                        CircularProgressIndicator(
+                            color = AccentEmerald,
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    } else {
+                        Icon(imageVector = Icons.Default.NetworkCheck, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = "TEST API KEY & MODEL CONNECTION",
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (connectionCheckStatus.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = connectionCheckStatus,
+                        color = if (connectionCheckStatus.startsWith("HTTP 200")) AccentEmerald else StatusError,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+
         // Multi-API Key Vault Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -199,7 +358,6 @@ fun SettingsScreen() {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Input box for adding a new key
                 OutlinedTextField(
                     value = newApiKeyInput,
                     onValueChange = { newApiKeyInput = it },
@@ -263,53 +421,6 @@ fun SettingsScreen() {
                             }
                         )
                     }
-                }
-            }
-        }
-
-        // Active Cloud Model Info Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkCard),
-            border = BorderStroke(1.dp, BorderSubtle)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "ACTIVE CLOUD AUDIO MODEL",
-                        color = AccentCyan,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = activeModelName,
-                        color = TextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = DarkSurface,
-                    border = BorderStroke(1.dp, BorderSubtle)
-                ) {
-                    Text(
-                        text = "AUTO-DISCOVERED",
-                        color = AccentEmerald,
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                    )
                 }
             }
         }
