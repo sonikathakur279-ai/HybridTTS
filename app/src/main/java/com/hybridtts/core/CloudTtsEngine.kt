@@ -24,8 +24,8 @@ sealed class SynthesisResult {
 class CloudTtsEngine private constructor(private val context: Context) {
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
     private val keyPool = KeyPoolManager.getInstance(context)
@@ -35,6 +35,16 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
     companion object {
         private const val SAMPLE_RATE_24K = 24000
+
+        // Complete 30 Google AI Studio Voice Roster
+        val ALL_30_VOICES = listOf(
+            "Achernar", "Achird", "Algenib", "Algieba", "Alnilam",
+            "Aoede", "Autonoe", "Callirrhoe", "Charon", "Despina",
+            "Enceladus", "Erinome", "Fenrir", "Gacrux", "Iapetus",
+            "Kore", "Laomedeia", "Leda", "Orus", "Puck",
+            "Pulcherrima", "Rasalgethi", "Sadachbia", "Sadaltager", "Schedar",
+            "Sulafat", "Umbriel", "Vindemiatrix", "Zephyr", "Zubenelgenubi"
+        )
 
         @Volatile
         private var instance: CloudTtsEngine? = null
@@ -48,7 +58,12 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
     suspend fun synthesizeAndPlay(
         text: String,
-        voiceName: String = "Aoede",
+        voiceName: String = "Charon",
+        audioProfile: String = "",
+        styleNote: String = "Natural",
+        paceNote: String = "Natural",
+        accentNote: String = "Neutral",
+        temperature: Float = 1.0f,
         speed: Float = 1.0f,
         pitchSemitones: Float = 0.0f
     ): SynthesisResult {
@@ -61,14 +76,34 @@ class CloudTtsEngine private constructor(private val context: Context) {
             val model = modelRegistry.getActiveModel()
             val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$key"
 
-            // Construct audio payload
+            // Construct steerable context prompt based on Google AI Studio's Director's Note
+            val contextDirectives = StringBuilder()
+            if (audioProfile.isNotBlank()) {
+                contextDirectives.append("Audio Profile: ${audioProfile.trim()}\n")
+            }
+            if (styleNote != "Natural") {
+                contextDirectives.append("Director's Note Style: $styleNote. ")
+            }
+            if (paceNote != "Natural") {
+                contextDirectives.append("Pace: $paceNote. ")
+            }
+            if (accentNote != "Neutral") {
+                contextDirectives.append("Accent: $accentNote. ")
+            }
+            if (contextDirectives.isNotBlank()) {
+                contextDirectives.append("\n\nDeliver the following text according to the directions above:\n")
+            }
+
+            val finalPromptText = "${contextDirectives}$text"
+
+            // Construct JSON audio payload
             val jsonPayload = JSONObject().apply {
                 val contents = JSONArray().apply {
                     val message = JSONObject().apply {
                         put("role", "user")
                         val parts = JSONArray().apply {
                             put(JSONObject().apply {
-                                put("text", "Read this dialogue aloud clearly with natural pacing: \"$text\"")
+                                put("text", finalPromptText)
                             })
                         }
                         put("parts", parts)
@@ -78,6 +113,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 put("contents", contents)
 
                 val generationConfig = JSONObject().apply {
+                    put("temperature", temperature.toDouble())
                     val modalities = JSONArray().apply {
                         put("AUDIO")
                     }
@@ -110,7 +146,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 if (response.code == 429) {
                     keyPool.markCooldown(key)
                     return@withContext SynthesisResult.Error(
-                        "Rate limit reached on key (${key.take(4)}...). Key moved to 24h cooldown. Rotating key...",
+                        "Rate limit reached on key (${key.take(4)}...). Key moved to 24h cooldown. Retrying next key...",
                         isQuotaExhausted = true
                     )
                 }
@@ -123,7 +159,6 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 val responseString = response.body?.string() ?: ""
                 val rootJson = JSONObject(responseString)
 
-                // Parse base64 audio bytes
                 val candidates = rootJson.optJSONArray("candidates")
                 if (candidates == null || candidates.length() == 0) {
                     return@withContext SynthesisResult.Error("No speech audio returned by cloud model.")
@@ -148,10 +183,23 @@ class CloudTtsEngine private constructor(private val context: Context) {
                     return@withContext SynthesisResult.Error("Audio payload missing in response structure.")
                 }
 
-                val pcmBytes = Base64.decode(base64Data, Base64.DEFAULT)
-                playPcmStream(pcmBytes, SAMPLE_RATE_24K, speed, pitchSemitones)
+                val rawAudioBytes = Base64.decode(base64Data, Base64.DEFAULT)
 
-                val duration = pcmBytes.size.toDouble() / (SAMPLE_RATE_24K * 2) // 16-bit mono = 2 bytes/sample
+                // Skip 44-byte WAV/RIFF header if present to extract pure linear PCM
+                val pcmData = if (rawAudioBytes.size > 44 &&
+                    rawAudioBytes[0] == 'R'.code.toByte() &&
+                    rawAudioBytes[1] == 'I'.code.toByte() &&
+                    rawAudioBytes[2] == 'F'.code.toByte() &&
+                    rawAudioBytes[3] == 'F'.code.toByte()
+                ) {
+                    rawAudioBytes.copyOfRange(44, rawAudioBytes.size)
+                } else {
+                    rawAudioBytes
+                }
+
+                playPcmStream(pcmData, SAMPLE_RATE_24K, speed, pitchSemitones)
+
+                val duration = pcmData.size.toDouble() / (SAMPLE_RATE_24K * 2) // 16-bit mono = 2 bytes/sample
                 SynthesisResult.Success(SAMPLE_RATE_24K, duration)
 
             } catch (e: Exception) {
@@ -196,17 +244,13 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
         track.write(pcmData, 0, pcmData.size)
 
-        // Native Android Sonic DSP Speed and Pitch Scaling
         try {
             val params = PlaybackParams()
             params.speed = speed.coerceIn(0.5f, 2.0f)
-            // Pitch formula: 2^(semitones / 12)
             val pitchMultiplier = Math.pow(2.0, pitchSemitones.toDouble() / 12.0).toFloat()
             params.pitch = pitchMultiplier.coerceIn(0.5f, 2.0f)
             track.playbackParams = params
-        } catch (_: Exception) {
-            // Safe fallback if device HAL restricts specific pitch multipliers
-        }
+        } catch (_: Exception) {}
 
         track.play()
         activeAudioTrack = track
