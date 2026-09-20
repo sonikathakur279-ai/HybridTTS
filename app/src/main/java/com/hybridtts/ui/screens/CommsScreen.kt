@@ -22,8 +22,6 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -65,7 +63,6 @@ fun CommsScreen() {
             .background(PureBlack)
             .padding(16.dp)
     ) {
-        // Segmented Sub-Tab Row (Clean Material 3 Implementation)
         TabRow(
             selectedTabIndex = selectedSubTab,
             containerColor = DarkCard,
@@ -108,7 +105,6 @@ fun DualInterpreterView() {
             .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Isometric Timeline Sync Toggle Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -148,7 +144,7 @@ fun DualInterpreterView() {
 
                 Switch(
                     checked = isometricSyncEnabled,
-                    onValueChange = { isometricSyncEnabled = it },
+                    onCheckedChange = { isometricSyncEnabled = it },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = PureBlack,
                         checkedTrackColor = AccentEmerald,
@@ -158,7 +154,6 @@ fun DualInterpreterView() {
             }
         }
 
-        // Speaker A Card (Upper Split)
         SplitSpeakerCard(
             speakerTag = "SPEAKER A (NATIVE)",
             language = "English (US)",
@@ -166,13 +161,12 @@ fun DualInterpreterView() {
             accentColor = AccentEmerald
         )
 
-        // Center Switcher Icon
         Box(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
             IconButton(
-                onClick = { /* Swap language pairs */ },
+                onClick = { /* Swap languages */ },
                 modifier = Modifier
                     .size(38.dp)
                     .background(DarkCard, CircleShape)
@@ -186,7 +180,6 @@ fun DualInterpreterView() {
             }
         }
 
-        // Speaker B Card (Lower Split)
         SplitSpeakerCard(
             speakerTag = "SPEAKER B (TARGET TRANSLATION)",
             language = "Hindi (Devanagari)",
@@ -294,7 +287,6 @@ fun VoipWalkieTalkieView() {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Big Push-To-Talk Button
         IconButton(
             onClick = { /* Push to talk */ },
             modifier = Modifier
