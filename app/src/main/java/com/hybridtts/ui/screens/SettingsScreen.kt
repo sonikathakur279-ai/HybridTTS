@@ -19,10 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,7 +55,6 @@ import com.hybridtts.ui.theme.PureBlack
 import com.hybridtts.ui.theme.StatusWarning
 import com.hybridtts.ui.theme.TextPrimary
 import com.hybridtts.ui.theme.TextSecondary
-import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
@@ -106,21 +103,18 @@ fun SettingsScreen() {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 EngineOptionRow(
-                    index = 0,
                     name = "Engine 1: Direct Cloud TTS",
                     desc = "Google AI Studio High-Fi Master (Quota: ~10 req/day)",
                     isSelected = selectedEngineIndex == 0,
                     onSelect = { selectedEngineIndex = 0 }
                 )
                 EngineOptionRow(
-                    index = 1,
                     name = "Engine 2: Cloud Hybrid (Default)",
                     desc = "Gemini AI Director + Local ONNX synthesis (~1500 req/day)",
                     isSelected = selectedEngineIndex == 1,
                     onSelect = { selectedEngineIndex = 1 }
                 )
                 EngineOptionRow(
-                    index = 2,
                     name = "Engine 3: 100% Fully Local ONNX",
                     desc = "Offline Kokoro-82M int8 engine (Zero cloud, unlimited)",
                     isSelected = selectedEngineIndex == 2,
@@ -139,14 +133,14 @@ fun SettingsScreen() {
             Column(modifier = Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.Key,
+                        imageVector = Icons.Default.Lock,
                         contentDescription = null,
                         tint = AccentCyan,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "AES-256 ENCRYPTED KEY POOL (INFINITE ROTATION)",
+                        text = "AES-256 ENCRYPTED KEY POOL",
                         color = AccentCyan,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -210,7 +204,7 @@ fun SettingsScreen() {
             Column(modifier = Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.Memory,
+                        imageVector = Icons.Default.Warning,
                         contentDescription = null,
                         tint = StatusWarning,
                         modifier = Modifier.size(16.dp)
@@ -322,7 +316,6 @@ fun SettingsScreen() {
 
 @Composable
 fun EngineOptionRow(
-    index: Int,
     name: String,
     desc: String,
     isSelected: Boolean,
