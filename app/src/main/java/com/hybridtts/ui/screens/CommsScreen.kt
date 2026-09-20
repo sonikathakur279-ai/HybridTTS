@@ -20,8 +20,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -32,8 +32,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,7 +51,6 @@ import com.hybridtts.ui.theme.BorderSubtle
 import com.hybridtts.ui.theme.DarkCard
 import com.hybridtts.ui.theme.DarkSurface
 import com.hybridtts.ui.theme.PureBlack
-import com.hybridtts.ui.theme.StatusWarning
 import com.hybridtts.ui.theme.TextPrimary
 import com.hybridtts.ui.theme.TextSecondary
 
@@ -68,18 +65,11 @@ fun CommsScreen() {
             .background(PureBlack)
             .padding(16.dp)
     ) {
-        // Segmented Sub-Tab Row
+        // Segmented Sub-Tab Row (Clean Material 3 Implementation)
         TabRow(
             selectedTabIndex = selectedSubTab,
             containerColor = DarkCard,
-            contentColor = AccentEmerald,
-            indicator = { tabPositions ->
-                TabRowDefaults.Indicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedSubTab]),
-                    color = AccentEmerald,
-                    height = 2.dp
-                )
-            }
+            contentColor = AccentEmerald
         ) {
             tabTitles.forEachIndexed { index, title ->
                 Tab(
@@ -135,7 +125,7 @@ fun DualInterpreterView() {
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.Sync,
+                            imageVector = Icons.Default.Refresh,
                             contentDescription = null,
                             tint = AccentEmerald,
                             modifier = Modifier.size(16.dp)
@@ -188,7 +178,7 @@ fun DualInterpreterView() {
                     .background(DarkCard, CircleShape)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Translate,
+                    imageVector = Icons.Default.SwapHoriz,
                     contentDescription = null,
                     tint = AccentCyan,
                     modifier = Modifier.size(20.dp)
