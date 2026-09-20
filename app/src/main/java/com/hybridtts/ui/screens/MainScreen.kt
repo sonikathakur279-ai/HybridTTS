@@ -1,5 +1,6 @@
 package com.hybridtts.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,58 +52,74 @@ fun MainScreen() {
         modifier = Modifier.fillMaxSize(),
         containerColor = PureBlack,
         topBar = {
-            // Enterprise Acoustic Station Header
             Surface(
                 color = PureBlack,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(
-                                text = "HYBRID-TTS // AGENT",
-                                color = TextPrimary,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                letterSpacing = 1.sp
+                        // Brand & Hardware Subtitle
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(AccentEmerald, CircleShape)
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .background(AccentEmerald, CircleShape)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
                                 Text(
-                                    text = "HELIO G85 READY • 60 FPS AMOLED",
+                                    text = "HYBRID-TTS // AGENT",
+                                    color = TextPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    letterSpacing = 0.5.sp,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "HELIO G85 READY • 60 FPS",
                                     color = AccentEmerald,
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1
                                 )
                             }
                         }
 
-                        // Engine Badge Pill
-                        Box(
-                            modifier = Modifier
-                                .background(DarkCard, RoundedCornerShape(20.dp))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // High-Tech Sleek Engine Badge (Never Wraps)
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = DarkCard,
+                            border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f))
                         ) {
                             Text(
                                 text = "ENGINE 2: HYBRID",
                                 color = AccentCyan,
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                maxLines = 1
                             )
                         }
                     }
+
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    // Minimalist Separation Rule
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -126,7 +143,7 @@ fun MainScreen() {
                             Icon(
                                 imageVector = item.icon,
                                 contentDescription = item.label,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         },
                         label = {
