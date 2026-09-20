@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HybridTTS</string>
+    <string name="engine_codename">Codename: Titan-Audio</string>
+    <string name="day1_status">Day 1 Cloud Pipeline Verified</string>
+</resources>
