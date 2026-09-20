@@ -2,6 +2,7 @@ package com.hybridtts.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,14 +19,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
@@ -84,7 +88,7 @@ fun CommsScreen() {
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         if (selectedSubTab == 0) {
             DualInterpreterView()
@@ -98,48 +102,135 @@ fun CommsScreen() {
 fun DualInterpreterView() {
     val scrollState = rememberScrollState()
     var isometricSyncEnabled by remember { mutableStateOf(true) }
+    var isAutoMode by remember { mutableStateOf(true) }
+
+    var speakerALang by remember { mutableStateOf("English (US)") }
+    var speakerBLang by remember { mutableStateOf("Hindi (IN)") }
+
+    var speakerATranscript by remember {
+        mutableStateOf("Tap the microphone or speak. Speech will be auto-detected and translated.")
+    }
+    var speakerBTranscript by remember {
+        mutableStateOf("बोलने के लिए माइक दबाएं। रीयल-टाइम अनुवाद यहाँ उत्पन्न होगा।")
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // MODE SELECTOR: AUTO vs MANUAL (As requested!)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            color = DarkCard,
+            border = BorderStroke(1.dp, BorderSubtle)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Auto Mode Button
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            if (isAutoMode) AccentEmerald else DarkCard,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { isAutoMode = true }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = if (isAutoMode) PureBlack else TextSecondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "AUTO DETECT",
+                            color = if (isAutoMode) PureBlack else TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                // Manual Mode Button
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            if (!isAutoMode) AccentCyan else DarkCard,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { isAutoMode = false }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.TouchApp,
+                            contentDescription = null,
+                            tint = if (!isAutoMode) PureBlack else TextSecondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "MANUAL SWAP",
+                            color = if (!isAutoMode) PureBlack else TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+
+        // Isometric Sync Toggle Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(10.dp),
             colors = CardDefaults.cardColors(containerColor = DarkCard),
             border = BorderStroke(1.dp, BorderSubtle)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = AccentEmerald,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = AccentEmerald,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column {
                         Text(
                             text = "ISOMETRIC TIMELINE CONSERVER",
                             color = AccentEmerald,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
+                        Text(
+                            text = "Locks audio duration within ±5ms",
+                            color = TextSecondary,
+                            fontSize = 10.sp
+                        )
                     }
-                    Text(
-                        text = "Locks dubbed audio to original duration within ±5ms using Sonic DSP.",
-                        color = TextSecondary,
-                        fontSize = 11.sp
-                    )
                 }
 
                 Switch(
@@ -154,44 +245,55 @@ fun DualInterpreterView() {
             }
         }
 
-        SplitSpeakerCard(
-            speakerTag = "SPEAKER A (NATIVE)",
-            language = "English (US)",
-            transcript = "Press mic to speak. Text will be recognized and translated in real-time.",
+        // Speaker A Card (Clean Layout, No Collisions)
+        RefinedSpeakerCard(
+            speakerName = "SPEAKER A",
+            language = speakerALang,
+            transcript = speakerATranscript,
             accentColor = AccentEmerald
         )
 
+        // Center Switcher (Active in Manual Mode)
         Box(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
             IconButton(
-                onClick = { /* Swap languages */ },
+                onClick = {
+                    val tempL = speakerALang
+                    speakerALang = speakerBLang
+                    speakerBLang = tempL
+
+                    val tempT = speakerATranscript
+                    speakerATranscript = speakerBTranscript
+                    speakerBTranscript = tempT
+                },
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(40.dp)
                     .background(DarkCard, CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.SwapHoriz,
-                    contentDescription = null,
-                    tint = AccentCyan,
-                    modifier = Modifier.size(20.dp)
+                    contentDescription = "Swap Languages",
+                    tint = if (!isAutoMode) AccentCyan else TextSecondary,
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
 
-        SplitSpeakerCard(
-            speakerTag = "SPEAKER B (TARGET TRANSLATION)",
-            language = "Hindi (Devanagari)",
-            transcript = "बोलने के लिए माइक दबाएं। रीयल-टाइम अनुवाद यहाँ उत्पन्न होगा।",
+        // Speaker B Card (Clean Layout, No Collisions)
+        RefinedSpeakerCard(
+            speakerName = "SPEAKER B",
+            language = speakerBLang,
+            transcript = speakerBTranscript,
             accentColor = AccentCyan
         )
     }
 }
 
 @Composable
-fun SplitSpeakerCard(
-    speakerTag: String,
+fun RefinedSpeakerCard(
+    speakerName: String,
     language: String,
     transcript: String,
     accentColor: androidx.compose.ui.graphics.Color
@@ -203,51 +305,73 @@ fun SplitSpeakerCard(
         border = BorderStroke(1.dp, BorderSubtle)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
+            // Header Row with clean separation
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = speakerTag,
+                    text = speakerName,
                     color = accentColor,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.5.sp
                 )
+
+                // Language Pill
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = DarkSurface,
+                    border = BorderStroke(1.dp, BorderSubtle)
+                ) {
+                    Text(
+                        text = language,
+                        color = TextPrimary,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Clean Transcript Box
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(DarkSurface, RoundedCornerShape(8.dp))
+                    .padding(10.dp)
+            ) {
                 Text(
-                    text = language,
-                    color = TextPrimary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
+                    text = transcript,
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
                 )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            Text(
-                text = transcript,
-                color = TextSecondary,
-                fontSize = 13.sp,
-                lineHeight = 18.sp
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
+            // Microphone Trigger
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
                 IconButton(
-                    onClick = { /* Mic trigger */ },
+                    onClick = { /* Staged for mic in Day 8 */ },
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .background(accentColor, CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
                         contentDescription = null,
-                        tint = PureBlack
+                        tint = PureBlack,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -288,7 +412,7 @@ fun VoipWalkieTalkieView() {
         Spacer(modifier = Modifier.height(20.dp))
 
         IconButton(
-            onClick = { /* Push to talk */ },
+            onClick = { /* Push to talk staged for Day 8 */ },
             modifier = Modifier
                 .size(110.dp)
                 .background(DarkCard, CircleShape)
