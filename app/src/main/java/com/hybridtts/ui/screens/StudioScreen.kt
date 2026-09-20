@@ -1,5 +1,6 @@
 package com.hybridtts.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -27,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -42,13 +44,17 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hybridtts.core.CloudTtsEngine
+import com.hybridtts.core.SynthesisResult
 import com.hybridtts.ui.theme.AccentCyan
 import com.hybridtts.ui.theme.AccentEmerald
 import com.hybridtts.ui.theme.BorderSubtle
@@ -57,13 +63,18 @@ import com.hybridtts.ui.theme.DarkSurface
 import com.hybridtts.ui.theme.PureBlack
 import com.hybridtts.ui.theme.TextPrimary
 import com.hybridtts.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 @Composable
 fun StudioScreen() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val ttsEngine = remember { CloudTtsEngine.getInstance(context) }
+
     var scriptText by remember {
         mutableStateOf(
-            "Welcome to HybridTTS. The neural acoustic engine is operating on the MediaTek Helio G85 architecture with sub-millisecond style vector swapping."
+            "Hello from HybridTTS! Your neural audio engine is now speaking through Google AI Studio on the MediaTek Helio G85."
         )
     }
     var selectedEmotion by remember { mutableIntStateOf(0) }
@@ -71,7 +82,10 @@ fun StudioScreen() {
 
     var speechRate by remember { mutableFloatStateOf(1.0f) }
     var pitchOffset by remember { mutableFloatStateOf(0.0f) }
-    var isPlaying by remember { mutableStateOf(false) }
+
+    var isSynthesizing by remember { mutableStateOf(false) }
+    var playbackStatusText by remember { mutableStateOf("Audio Master Ready (24kHz Mono)") }
+    var lastAudioDuration by remember { mutableFloatStateOf(0.0f) }
 
     val scrollState = rememberScrollState()
 
@@ -118,7 +132,7 @@ fun StudioScreen() {
                     onValueChange = { scriptText = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(150.dp),
+                        .height(140.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
@@ -162,13 +176,6 @@ fun StudioScreen() {
                         selectedLabelColor = PureBlack,
                         containerColor = DarkCard,
                         labelColor = TextPrimary
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = (selectedEmotion == index),
-                        borderColor = BorderSubtle,
-                        selectedBorderColor = AccentEmerald,
-                        borderWidth = 1.dp
                     )
                 )
             }
@@ -193,7 +200,7 @@ fun StudioScreen() {
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "SONIC DSP PARAMETERS",
+                        text = "SONIC DSP SPEED & PITCH",
                         color = AccentCyan,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -259,26 +266,74 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Synthesize Action Button
+        // Synthesize Action Button (Triggers Real Cloud TTS!)
         Button(
-            onClick = { /* Staged for synthesis trigger */ },
+            onClick = {
+                if (isSynthesizing) return@Button
+                isSynthesizing = true
+                playbackStatusText = "Synthesizing audio via Google AI Studio..."
+
+                scope.launch {
+                    val result = ttsEngine.synthesizeAndPlay(
+                        text = scriptText,
+                        voiceName = "Aoede",
+                        speed = speechRate,
+                        pitchSemitones = pitchOffset
+                    )
+
+                    isSynthesizing = false
+
+                    when (result) {
+                        is SynthesisResult.Success -> {
+                            lastAudioDuration = result.durationSeconds.toFloat()
+                            playbackStatusText = String.format(
+                                Locale.US,
+                                "Playing: 24kHz Master Audio (%.1fs)",
+                                result.durationSeconds
+                            )
+                        }
+                        is SynthesisResult.Error -> {
+                            playbackStatusText = "Synthesis failed. Check Settings!"
+                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            },
+            enabled = !isSynthesizing,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = AccentEmerald,
-                contentColor = PureBlack
+                contentColor = PureBlack,
+                disabledContainerColor = DarkCard,
+                disabledContentColor = TextSecondary
             )
         ) {
-            Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "SYNTHESIZE SPEECH MASTER",
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp
-            )
+            if (isSynthesizing) {
+                CircularProgressIndicator(
+                    color = AccentEmerald,
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "SYNTHESIZING SPEECH...",
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp
+                )
+            } else {
+                Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "SYNTHESIZE SPEECH MASTER",
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -297,15 +352,20 @@ fun StudioScreen() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = { isPlaying = !isPlaying },
+                    onClick = {
+                        if (ttsEngine.isPlaying()) {
+                            ttsEngine.stopPlayback()
+                            playbackStatusText = "Audio playback stopped."
+                        }
+                    },
                     modifier = Modifier
                         .size(42.dp)
-                        .background(if (isPlaying) AccentEmerald else DarkSurface, CircleShape)
+                        .background(DarkSurface, CircleShape)
                 ) {
                     Icon(
-                        imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        imageVector = if (ttsEngine.isPlaying()) Icons.Default.Stop else Icons.Default.PlayArrow,
                         contentDescription = null,
-                        tint = if (isPlaying) PureBlack else AccentEmerald
+                        tint = AccentEmerald
                     )
                 }
 
@@ -313,13 +373,17 @@ fun StudioScreen() {
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (isPlaying) "Playing: Studio Preview Audio" else "Audio Master Ready (24kHz Mono)",
+                        text = playbackStatusText,
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "00:03.42 / 00:08.10 • 16-bit PCM",
+                        text = if (lastAudioDuration > 0f) {
+                            String.format(Locale.US, "Duration: %.2f sec • 16-bit PCM Linear", lastAudioDuration)
+                        } else {
+                            "24,000 Hz Mono • Engine 1 Active"
+                        },
                         color = TextSecondary,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace
@@ -329,7 +393,7 @@ fun StudioScreen() {
                 Box(
                     modifier = Modifier
                         .size(10.dp)
-                        .background(if (isPlaying) AccentEmerald else TextSecondary, CircleShape)
+                        .background(if (ttsEngine.isPlaying()) AccentEmerald else TextSecondary, CircleShape)
                 )
             }
         }
