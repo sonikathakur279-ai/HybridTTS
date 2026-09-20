@@ -249,7 +249,6 @@ fun SettingsScreen() {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Thermal Protection Switch
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -261,7 +260,7 @@ fun SettingsScreen() {
                     }
                     Switch(
                         checked = thermalProtection,
-                        onValueChange = { thermalProtection = it },
+                        onCheckedChange = { thermalProtection = it },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = PureBlack,
                             checkedTrackColor = StatusWarning,
@@ -302,7 +301,7 @@ fun SettingsScreen() {
                 }
                 Switch(
                     checked = ringBufferStreaming,
-                    onValueChange = { ringBufferStreaming = it },
+                    onCheckedChange = { ringBufferStreaming = it },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = PureBlack,
                         checkedTrackColor = AccentEmerald,
