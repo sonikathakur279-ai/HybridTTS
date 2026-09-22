@@ -55,10 +55,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
     // Persistent Audio Cache: Never lost on stop or tab switch
     var cachedPcmData: ByteArray? = null
-        private set
-
     var cachedDurationSeconds: Double = 0.0
-        private set
 
     private var activeAudioTrack: AudioTrack? = null
 
@@ -92,6 +89,13 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 instance ?: CloudTtsEngine(context.applicationContext).also { instance = it }
             }
         }
+    }
+
+    // Public method for HybridDirectorEngine to push stitched composite audio directly
+    fun loadExternalMasterAudio(pcmData: ByteArray) {
+        cachedPcmData = pcmData
+        cachedDurationSeconds = pcmData.size.toDouble() / (SAMPLE_RATE_24K * 2)
+        prepareAudioTrack(pcmData)
     }
 
     suspend fun synthesizeMaster(
@@ -136,7 +140,6 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
             val finalPromptText = "${contextDirectives}$text"
 
-            // Strictly format temperature to Google AI Studio's 0.05 step grid
             val roundedTemp = (Math.round(temperature * 20.0f) / 20.0f).coerceIn(0.05f, 2.0f)
 
             val jsonPayload = JSONObject().apply {
@@ -227,7 +230,6 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
                 val rawAudioBytes = Base64.decode(base64Data, Base64.DEFAULT)
 
-                // Skip 44-byte WAV header if present to retain clean PCM linear samples
                 val pcmData = if (rawAudioBytes.size > 44 &&
                     rawAudioBytes[0] == 'R'.code.toByte() &&
                     rawAudioBytes[1] == 'I'.code.toByte() &&
@@ -239,7 +241,6 @@ class CloudTtsEngine private constructor(private val context: Context) {
                     rawAudioBytes
                 }
 
-                // Cache in memory: We do NOT auto-play. We prepare the playback engine.
                 cachedPcmData = pcmData
                 cachedDurationSeconds = pcmData.size.toDouble() / (SAMPLE_RATE_24K * 2)
 
@@ -255,7 +256,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
         }
     }
 
-    private fun prepareAudioTrack(pcmData: ByteArray) {
+    fun prepareAudioTrack(pcmData: ByteArray) {
         stopPlayback()
 
         val minBufferSize = AudioTrack.getMinBufferSize(
@@ -336,7 +337,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
     fun seekToFraction(fraction: Float) {
         val track = activeAudioTrack ?: return
         val pcm = cachedPcmData ?: return
-        val totalFrames = pcm.size / 2 // 16-bit mono = 2 bytes/frame
+        val totalFrames = pcm.size / 2
         val targetFrame = (fraction.coerceIn(0f, 1f) * totalFrames).toInt()
 
         try {
@@ -369,7 +370,6 @@ class CloudTtsEngine private constructor(private val context: Context) {
         }
     }
 
-    // Export generated audio as a 24kHz Studio WAV file directly to Downloads
     fun saveAudioToDownloads(customName: String = ""): Result<String> {
         val pcm = cachedPcmData ?: return Result.failure(Exception("No generated audio to download."))
 
@@ -421,8 +421,8 @@ class CloudTtsEngine private constructor(private val context: Context) {
         header.putInt(totalDataLen)
         header.put("WAVE".toByteArray())
         header.put("fmt ".toByteArray())
-        header.putInt(16) // SubChunk1Size (16 for PCM)
-        header.putShort(1) // AudioFormat (1 for PCM)
+        header.putInt(16)
+        header.putShort(1)
         header.putShort(channels)
         header.putInt(sampleRate)
         header.putInt(byteRate)
