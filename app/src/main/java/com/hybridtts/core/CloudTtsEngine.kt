@@ -1,12 +1,24 @@
 package com.hybridtts.core
 
+import android.content.ContentValues
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.PlaybackParams
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Base64
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -14,6 +26,14 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 sealed class SynthesisResult {
@@ -23,20 +43,38 @@ sealed class SynthesisResult {
 
 class CloudTtsEngine private constructor(private val context: Context) {
 
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(25, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
     private val keyPool = KeyPoolManager.getInstance(context)
     private val modelRegistry = ModelRegistryManager.getInstance(context)
 
+    // Persistent Audio Cache: Never lost on stop or tab switch
+    var cachedPcmData: ByteArray? = null
+        private set
+
+    var cachedDurationSeconds: Double = 0.0
+        private set
+
     private var activeAudioTrack: AudioTrack? = null
 
-    companion object {
-        private const val SAMPLE_RATE_24K = 24000
+    // Playback state flows
+    private val _isPlayingState = MutableStateFlow(false)
+    val isPlayingState: StateFlow<Boolean> = _isPlayingState.asStateFlow()
 
-        // Complete 30 Google AI Studio Voice Roster
+    private val _playbackProgressFraction = MutableStateFlow(0f)
+    val playbackProgressFraction: StateFlow<Float> = _playbackProgressFraction.asStateFlow()
+
+    private val _isGeneratingState = MutableStateFlow(false)
+    val isGeneratingState: StateFlow<Boolean> = _isGeneratingState.asStateFlow()
+
+    companion object {
+        const val SAMPLE_RATE_24K = 24000
+
         val ALL_30_VOICES = listOf(
             "Achernar", "Achird", "Algenib", "Algieba", "Alnilam",
             "Aoede", "Autonoe", "Callirrhoe", "Charon", "Despina",
@@ -56,27 +94,29 @@ class CloudTtsEngine private constructor(private val context: Context) {
         }
     }
 
-    suspend fun synthesizeAndPlay(
+    suspend fun synthesizeMaster(
         text: String,
         voiceName: String = "Charon",
         audioProfile: String = "",
         styleNote: String = "Natural",
         paceNote: String = "Natural",
         accentNote: String = "Neutral",
-        temperature: Float = 1.0f,
-        speed: Float = 1.0f,
-        pitchSemitones: Float = 0.0f
+        temperature: Float = 1.0f
     ): SynthesisResult {
         return withContext(Dispatchers.IO) {
+            _isGeneratingState.value = true
+
             val key = keyPool.getNextActiveKey()
-                ?: return@withContext SynthesisResult.Error(
+            if (key == null) {
+                _isGeneratingState.value = false
+                return@withContext SynthesisResult.Error(
                     "No active Google AI Studio keys available. Add a key in Settings!"
                 )
+            }
 
             val model = modelRegistry.getActiveModel()
             val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$key"
 
-            // Construct steerable context prompt based on Google AI Studio's Director's Note
             val contextDirectives = StringBuilder()
             if (audioProfile.isNotBlank()) {
                 contextDirectives.append("Audio Profile: ${audioProfile.trim()}\n")
@@ -96,7 +136,9 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
             val finalPromptText = "${contextDirectives}$text"
 
-            // Construct JSON audio payload
+            // Strictly format temperature to Google AI Studio's 0.05 step grid
+            val roundedTemp = (Math.round(temperature * 20.0f) / 20.0f).coerceIn(0.05f, 2.0f)
+
             val jsonPayload = JSONObject().apply {
                 val contents = JSONArray().apply {
                     val message = JSONObject().apply {
@@ -113,7 +155,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 put("contents", contents)
 
                 val generationConfig = JSONObject().apply {
-                    put("temperature", temperature.toDouble())
+                    put("temperature", roundedTemp.toDouble())
                     val modalities = JSONArray().apply {
                         put("AUDIO")
                     }
@@ -134,25 +176,23 @@ class CloudTtsEngine private constructor(private val context: Context) {
             }
 
             val requestBody = jsonPayload.toString().toRequestBody("application/json".toMediaType())
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .build()
+            val request = Request.Builder().url(url).post(requestBody).build()
 
             try {
                 val response = httpClient.newCall(request).execute()
 
-                // Intercept HTTP 429 Quota Rate Limits
                 if (response.code == 429) {
                     keyPool.markCooldown(key)
+                    _isGeneratingState.value = false
                     return@withContext SynthesisResult.Error(
-                        "Rate limit reached on key (${key.take(4)}...). Key moved to 24h cooldown. Retrying next key...",
+                        "Rate limit reached on key (${key.take(4)}...). Key moved to 24h cooldown.",
                         isQuotaExhausted = true
                     )
                 }
 
                 if (!response.isSuccessful) {
                     val errorBody = response.body?.string() ?: ""
+                    _isGeneratingState.value = false
                     return@withContext SynthesisResult.Error("API Error ${response.code}: $errorBody")
                 }
 
@@ -161,6 +201,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
                 val candidates = rootJson.optJSONArray("candidates")
                 if (candidates == null || candidates.length() == 0) {
+                    _isGeneratingState.value = false
                     return@withContext SynthesisResult.Error("No speech audio returned by cloud model.")
                 }
 
@@ -180,12 +221,13 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 }
 
                 if (base64Data == null) {
+                    _isGeneratingState.value = false
                     return@withContext SynthesisResult.Error("Audio payload missing in response structure.")
                 }
 
                 val rawAudioBytes = Base64.decode(base64Data, Base64.DEFAULT)
 
-                // Skip 44-byte WAV/RIFF header if present to extract pure linear PCM
+                // Skip 44-byte WAV header if present to retain clean PCM linear samples
                 val pcmData = if (rawAudioBytes.size > 44 &&
                     rawAudioBytes[0] == 'R'.code.toByte() &&
                     rawAudioBytes[1] == 'I'.code.toByte() &&
@@ -197,31 +239,30 @@ class CloudTtsEngine private constructor(private val context: Context) {
                     rawAudioBytes
                 }
 
-                playPcmStream(pcmData, SAMPLE_RATE_24K, speed, pitchSemitones)
+                // Cache in memory: We do NOT auto-play. We prepare the playback engine.
+                cachedPcmData = pcmData
+                cachedDurationSeconds = pcmData.size.toDouble() / (SAMPLE_RATE_24K * 2)
 
-                val duration = pcmData.size.toDouble() / (SAMPLE_RATE_24K * 2) // 16-bit mono = 2 bytes/sample
-                SynthesisResult.Success(SAMPLE_RATE_24K, duration)
+                prepareAudioTrack(pcmData)
+
+                _isGeneratingState.value = false
+                SynthesisResult.Success(SAMPLE_RATE_24K, cachedDurationSeconds)
 
             } catch (e: Exception) {
+                _isGeneratingState.value = false
                 SynthesisResult.Error("Connection failure: ${e.localizedMessage ?: e.message}")
             }
         }
     }
 
-    private fun playPcmStream(
-        pcmData: ByteArray,
-        sampleRate: Int,
-        speed: Float,
-        pitchSemitones: Float
-    ) {
+    private fun prepareAudioTrack(pcmData: ByteArray) {
         stopPlayback()
 
         val minBufferSize = AudioTrack.getMinBufferSize(
-            sampleRate,
+            SAMPLE_RATE_24K,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
-
         val bufferSize = maxOf(minBufferSize, pcmData.size)
 
         val track = AudioTrack.Builder()
@@ -234,7 +275,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
             .setAudioFormat(
                 AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sampleRate)
+                    .setSampleRate(SAMPLE_RATE_24K)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
@@ -243,6 +284,18 @@ class CloudTtsEngine private constructor(private val context: Context) {
             .build()
 
         track.write(pcmData, 0, pcmData.size)
+        activeAudioTrack = track
+        _playbackProgressFraction.value = 0f
+    }
+
+    fun playAudio(speed: Float = 1.0f, pitchSemitones: Float = 0.0f) {
+        val pcm = cachedPcmData ?: return
+
+        if (activeAudioTrack == null) {
+            prepareAudioTrack(pcm)
+        }
+
+        val track = activeAudioTrack ?: return
 
         try {
             val params = PlaybackParams()
@@ -253,7 +306,18 @@ class CloudTtsEngine private constructor(private val context: Context) {
         } catch (_: Exception) {}
 
         track.play()
-        activeAudioTrack = track
+        _isPlayingState.value = true
+
+        startProgressTracker()
+    }
+
+    fun pauseAudio() {
+        activeAudioTrack?.let {
+            if (it.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                it.pause()
+            }
+        }
+        _isPlayingState.value = false
     }
 
     fun stopPlayback() {
@@ -262,17 +326,111 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 if (it.playState == AudioTrack.PLAYSTATE_PLAYING) {
                     it.stop()
                 }
-                it.release()
+                it.reloadStaticData()
             }
         } catch (_: Exception) {}
-        activeAudioTrack = null
+        _isPlayingState.value = false
+        _playbackProgressFraction.value = 0f
     }
 
-    fun isPlaying(): Boolean {
-        return try {
-            activeAudioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING
-        } catch (_: Exception) {
-            false
+    fun seekToFraction(fraction: Float) {
+        val track = activeAudioTrack ?: return
+        val pcm = cachedPcmData ?: return
+        val totalFrames = pcm.size / 2 // 16-bit mono = 2 bytes/frame
+        val targetFrame = (fraction.coerceIn(0f, 1f) * totalFrames).toInt()
+
+        try {
+            track.playbackHeadPosition = targetFrame
+            _playbackProgressFraction.value = fraction.coerceIn(0f, 1f)
+        } catch (_: Exception) {}
+    }
+
+    private fun startProgressTracker() {
+        applicationScope.launch {
+            val pcm = cachedPcmData ?: return@launch
+            val totalFrames = pcm.size / 2
+
+            while (_isPlayingState.value && activeAudioTrack != null) {
+                val currentFrame = activeAudioTrack?.playbackHeadPosition ?: 0
+                val progress = currentFrame.toFloat() / totalFrames.toFloat()
+
+                _playbackProgressFraction.value = progress.coerceIn(0f, 1f)
+
+                if (currentFrame >= totalFrames || activeAudioTrack?.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                    if (currentFrame >= totalFrames) {
+                        _isPlayingState.value = false
+                        _playbackProgressFraction.value = 0f
+                        activeAudioTrack?.reloadStaticData()
+                    }
+                    break
+                }
+                delay(50)
+            }
         }
+    }
+
+    // Export generated audio as a 24kHz Studio WAV file directly to Downloads
+    fun saveAudioToDownloads(customName: String = ""): Result<String> {
+        val pcm = cachedPcmData ?: return Result.failure(Exception("No generated audio to download."))
+
+        return try {
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val fileName = if (customName.isNotBlank()) "${customName}_$timestamp.wav" else "HybridTTS_$timestamp.wav"
+
+            val wavHeader = createWavHeader(pcm.size, SAMPLE_RATE_24K, 1, 16)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/HybridTTS")
+                }
+
+                val uri: Uri? = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    context.contentResolver.openOutputStream(uri)?.use { out: OutputStream ->
+                        out.write(wavHeader)
+                        out.write(pcm)
+                    }
+                    Result.success("Saved to Downloads/HybridTTS/$fileName")
+                } else {
+                    Result.failure(Exception("Unable to create media store record."))
+                }
+            } else {
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "HybridTTS")
+                if (!dir.exists()) dir.mkdirs()
+                val file = File(dir, fileName)
+                FileOutputStream(file).use { out ->
+                    out.write(wavHeader)
+                    out.write(pcm)
+                }
+                Result.success("Saved to ${file.absolutePath}")
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun createWavHeader(pcmLength: Int, sampleRate: Int, channels: Short, bitsPerSample: Short): ByteArray {
+        val totalDataLen = pcmLength + 36
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val blockAlign = (channels * bitsPerSample / 8).toShort()
+
+        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+        header.put("RIFF".toByteArray())
+        header.putInt(totalDataLen)
+        header.put("WAVE".toByteArray())
+        header.put("fmt ".toByteArray())
+        header.putInt(16) // SubChunk1Size (16 for PCM)
+        header.putShort(1) // AudioFormat (1 for PCM)
+        header.putShort(channels)
+        header.putInt(sampleRate)
+        header.putInt(byteRate)
+        header.putShort(blockAlign)
+        header.putShort(bitsPerSample)
+        header.put("data".toByteArray())
+        header.putInt(pcmLength)
+
+        return header.array()
     }
 }
