@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Pause
@@ -48,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hybridtts.core.CloudTtsEngine
+import com.hybridtts.core.HybridDirectorEngine
 import com.hybridtts.core.SynthesisResult
 import com.hybridtts.ui.theme.AccentCyan
 import com.hybridtts.ui.theme.AccentEmerald
@@ -78,14 +81,17 @@ fun StudioScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val ttsEngine = remember { CloudTtsEngine.getInstance(context) }
+    val hybridEngine = remember { HybridDirectorEngine.getInstance(context) }
 
     val isPlaying by ttsEngine.isPlayingState.collectAsState()
     val playbackProgress by ttsEngine.playbackProgressFraction.collectAsState()
     val isGenerating by ttsEngine.isGeneratingState.collectAsState()
 
+    var activeEngineMode by remember { mutableIntStateOf(1) } // 0 = Engine 1 Direct, 1 = Engine 2 Hybrid
+
     var scriptText by remember {
         mutableStateOf(
-            "[mystery] The old house stood at the edge of the moor, its windows dark save for a single candle. [tension] As Elias crept closer, the heavy wooden door creaked open."
+            "The doctor examined the open wound with grave concern. As the wind howled outside, he wound the clean bandage tightly around her arm."
         )
     }
 
@@ -108,13 +114,16 @@ fun StudioScreen() {
     var selectedAccent by remember { mutableStateOf("British (RP)") }
     var isAccentMenuOpen by remember { mutableStateOf(false) }
 
-    // Temperature strictly stepping by 0.05
     var temperature by remember { mutableFloatStateOf(1.0f) }
     var speechRate by remember { mutableFloatStateOf(1.0f) }
     var pitchOffset by remember { mutableFloatStateOf(0.0f) }
 
-    var playbackStatusText by remember { mutableStateOf("Google AI Studio TTS Engine Ready") }
+    var playbackStatusText by remember { mutableStateOf("Ready to synthesize") }
     var hasGeneratedAudio by remember { mutableStateOf(ttsEngine.cachedPcmData != null) }
+
+    var directorAnalysisSummary by remember {
+        mutableStateOf("Director Idle • Ready to analyze phonetics & homographs")
+    }
 
     val quickAudioTags = listOf("[whisper]", "[mystery]", "[tension]", "[pause]", "[sighs]", "[laughs]", "[gasp]", "[description]")
 
@@ -127,7 +136,82 @@ fun StudioScreen() {
             .padding(16.dp)
             .verticalScroll(scrollState)
     ) {
-        // Voice Selection Dropdown
+        // Mode Selector: Engine 1 vs Engine 2
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            color = DarkCard,
+            border = BorderStroke(1.dp, BorderSubtle)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            if (activeEngineMode == 1) AccentEmerald else DarkCard,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { activeEngineMode = 1 }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = if (activeEngineMode == 1) PureBlack else TextSecondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "ENGINE 2: HYBRID DIRECTOR",
+                            color = if (activeEngineMode == 1) PureBlack else TextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            if (activeEngineMode == 0) AccentCyan else DarkCard,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { activeEngineMode = 0 }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.GraphicEq,
+                            contentDescription = null,
+                            tint = if (activeEngineMode == 0) PureBlack else TextSecondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "ENGINE 1: DIRECT PREVIEW",
+                            color = if (activeEngineMode == 0) PureBlack else TextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Voice Character Selector
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -149,7 +233,7 @@ fun StudioScreen() {
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "VOICE CHARACTER (30 VOICES)",
+                            text = "VOICE CHARACTER",
                             color = AccentEmerald,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -231,7 +315,7 @@ fun StudioScreen() {
                         unfocusedBorderColor = BorderSubtle,
                         cursorColor = AccentEmerald
                     ),
-                    placeholder = { Text("Describe character voice persona...", color = TextSecondary, fontSize = 11.sp) },
+                    placeholder = { Text("Character persona / vocal timbre...", color = TextSecondary, fontSize = 11.sp) },
                     singleLine = true
                 )
             }
@@ -307,7 +391,7 @@ fun StudioScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "SCRIPT // COMPOSER",
+                        text = "SCRIPT COMPOSER",
                         color = AccentEmerald,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -328,7 +412,7 @@ fun StudioScreen() {
                     onValueChange = { scriptText = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(120.dp),
+                        .height(115.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
@@ -339,13 +423,13 @@ fun StudioScreen() {
                         cursorColor = AccentEmerald
                     ),
                     shape = RoundedCornerShape(10.dp),
-                    placeholder = { Text("Enter script or dialogue...", color = TextSecondary) }
+                    placeholder = { Text("Enter dialogue lines to synthesize...", color = TextSecondary) }
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Insert Expressive Tags:",
+                    text = "Quick Expressive Tags:",
                     color = TextSecondary,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
@@ -385,7 +469,46 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Model Settings & Temperature (0.05 step grid)
+        // AI Voice Director Live Diagnostic Readout Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = DarkCard),
+            border = BorderStroke(1.dp, if (activeEngineMode == 1) AccentEmerald else BorderSubtle)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = if (activeEngineMode == 1) AccentEmerald else TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (activeEngineMode == 1) "GEMINI VOICE DIRECTOR // ACTIVE" else "GEMINI VOICE DIRECTOR // IDLE",
+                        color = if (activeEngineMode == 1) AccentEmerald else TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = directorAnalysisSummary,
+                    color = TextPrimary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 15.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Temperature (0.05 step grid) & Sonic DSP
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -397,7 +520,7 @@ fun StudioScreen() {
                     Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "MODEL TEMPERATURE & PLAYBACK DSP",
+                        text = "TEMPERATURE & ACOUSTIC DSP",
                         color = StatusWarning,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -407,15 +530,13 @@ fun StudioScreen() {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Temperature Slider with 0.05 increments
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Model Temperature (0.05 steps)", color = TextSecondary, fontSize = 12.sp)
+                    Text("Model Temperature (0.05 step)", color = TextSecondary, fontSize = 12.sp)
                     Text(String.format(Locale.US, "%.2f", temperature), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 Slider(
                     value = temperature,
                     onValueChange = {
-                        // Snap exactly to 0.05 increments
                         temperature = (Math.round(it * 20.0f) / 20.0f).coerceIn(0.05f, 2.0f)
                     },
                     valueRange = 0.05f..2.0f,
@@ -423,9 +544,8 @@ fun StudioScreen() {
                     colors = SliderDefaults.colors(thumbColor = StatusWarning, activeTrackColor = StatusWarning, inactiveTrackColor = BorderSubtle)
                 )
 
-                // Speech Rate Slider
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Local Playback Speed", color = TextSecondary, fontSize = 12.sp)
+                    Text("Playback Speed Rate", color = TextSecondary, fontSize = 12.sp)
                     Text(String.format(Locale.US, "%.2fx", speechRate), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 Slider(
@@ -435,9 +555,8 @@ fun StudioScreen() {
                     colors = SliderDefaults.colors(thumbColor = AccentEmerald, activeTrackColor = AccentEmerald, inactiveTrackColor = BorderSubtle)
                 )
 
-                // Pitch Offset Slider
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Local Pitch Shift", color = TextSecondary, fontSize = 12.sp)
+                    Text("Pitch Offset Semitones", color = TextSecondary, fontSize = 12.sp)
                     Text(String.format(Locale.US, "%+.1f st", pitchOffset), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 Slider(
@@ -451,22 +570,38 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Synthesize Button: Generates and buffers audio (NO AUTO-PLAY)
+        // Synthesize Button
         Button(
             onClick = {
                 if (isGenerating) return@Button
-                playbackStatusText = "Synthesizing audio via Google AI Studio ($selectedVoice)..."
+                playbackStatusText = "Synthesizing audio..."
 
                 scope.launch {
-                    val result = ttsEngine.synthesizeMaster(
-                        text = scriptText,
-                        voiceName = selectedVoice,
-                        audioProfile = audioProfileText,
-                        styleNote = selectedStyle,
-                        paceNote = selectedPace,
-                        accentNote = selectedAccent,
-                        temperature = temperature
-                    )
+                    val result = if (activeEngineMode == 1) {
+                        // Engine 2: Cloud Hybrid with Gemini AI Voice Director
+                        hybridEngine.executeHybridProduction(
+                            script = scriptText,
+                            voiceName = selectedVoice,
+                            audioProfile = audioProfileText,
+                            styleNote = selectedStyle,
+                            temperature = temperature,
+                            onStatusUpdate = { update ->
+                                directorAnalysisSummary = update
+                                playbackStatusText = update
+                            }
+                        )
+                    } else {
+                        // Engine 1: Direct Cloud TTS
+                        ttsEngine.synthesizeMaster(
+                            text = scriptText,
+                            voiceName = selectedVoice,
+                            audioProfile = audioProfileText,
+                            styleNote = selectedStyle,
+                            paceNote = selectedPace,
+                            accentNote = selectedAccent,
+                            temperature = temperature
+                        )
+                    }
 
                     when (result) {
                         is SynthesisResult.Success -> {
@@ -500,17 +635,22 @@ fun StudioScreen() {
             if (isGenerating) {
                 CircularProgressIndicator(color = AccentEmerald, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("GENERATING AUDIO IN CLOUD...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text("DIRECTING & RENDERING...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             } else {
                 Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("SYNTHESIZE SPEECH MASTER", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text(
+                    text = if (activeEngineMode == 1) "SYNTHESIZE VIA VOICE DIRECTOR" else "SYNTHESIZE DIRECT CLOUD",
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Audio Master Player & Interactive Scrubbing Timeline
+        // Playback & Interactive Scrubbing Bar
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -524,7 +664,6 @@ fun StudioScreen() {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Play / Pause Toggle Button
                         IconButton(
                             onClick = {
                                 if (!hasGeneratedAudio) {
@@ -550,7 +689,6 @@ fun StudioScreen() {
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // Stop Button (Rewinds to start)
                         IconButton(
                             onClick = {
                                 if (hasGeneratedAudio) {
@@ -570,14 +708,13 @@ fun StudioScreen() {
                         }
                     }
 
-                    // Download Button: Lights up in Emerald when audio is ready!
                     Button(
                         onClick = {
                             if (!hasGeneratedAudio) return@Button
-                            val result = ttsEngine.saveAudioToDownloads("HybridTTS_${selectedVoice}")
+                            val result = ttsEngine.saveAudioToDownloads("HybridTTS_Master")
                             result.fold(
                                 onSuccess = { path ->
-                                    Toast.makeText(context, "Downloaded! $path", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Saved to Downloads/HybridTTS/", Toast.LENGTH_LONG).show()
                                 },
                                 onFailure = { err ->
                                     Toast.makeText(context, "Export error: ${err.localizedMessage}", Toast.LENGTH_SHORT).show()
@@ -594,7 +731,7 @@ fun StudioScreen() {
                         ),
                         border = BorderStroke(1.dp, if (hasGeneratedAudio) AccentEmerald else BorderSubtle)
                     ) {
-                        Icon(imageVector = Icons.Default.Download, contentDescription = "Download WAV", modifier = Modifier.size(16.dp))
+                        Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "DOWNLOAD WAV",
@@ -607,7 +744,6 @@ fun StudioScreen() {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Interactive Audio Scrubbing Timeline Slider
                 val currentSeconds = (playbackProgress * ttsEngine.cachedDurationSeconds).toFloat()
                 val totalSeconds = ttsEngine.cachedDurationSeconds.toFloat()
 
