@@ -22,7 +22,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Stop
@@ -34,8 +36,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -45,6 +45,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -78,13 +79,16 @@ fun StudioScreen() {
     val scope = rememberCoroutineScope()
     val ttsEngine = remember { CloudTtsEngine.getInstance(context) }
 
+    val isPlaying by ttsEngine.isPlayingState.collectAsState()
+    val playbackProgress by ttsEngine.playbackProgressFraction.collectAsState()
+    val isGenerating by ttsEngine.isGeneratingState.collectAsState()
+
     var scriptText by remember {
         mutableStateOf(
             "[mystery] The old house stood at the edge of the moor, its windows dark save for a single candle. [tension] As Elias crept closer, the heavy wooden door creaked open."
         )
     }
 
-    // Google AI Studio TTS Specific Controls
     var selectedVoice by remember { mutableStateOf("Charon") }
     var isVoiceDropdownOpen by remember { mutableStateOf(false) }
 
@@ -92,7 +96,6 @@ fun StudioScreen() {
         mutableStateOf("A deep, resonant narrator of mysteries.")
     }
 
-    // Director's Note Options
     val styles = listOf("Natural", "Vocal Smile", "Newscaster", "Whisper", "Empathetic", "Promo/Hype", "Deadpan")
     var selectedStyle by remember { mutableStateOf("Whisper") }
     var isStyleMenuOpen by remember { mutableStateOf(false) }
@@ -105,15 +108,14 @@ fun StudioScreen() {
     var selectedAccent by remember { mutableStateOf("British (RP)") }
     var isAccentMenuOpen by remember { mutableStateOf(false) }
 
+    // Temperature strictly stepping by 0.05
     var temperature by remember { mutableFloatStateOf(1.0f) }
     var speechRate by remember { mutableFloatStateOf(1.0f) }
     var pitchOffset by remember { mutableFloatStateOf(0.0f) }
 
-    var isSynthesizing by remember { mutableStateOf(false) }
     var playbackStatusText by remember { mutableStateOf("Google AI Studio TTS Engine Ready") }
-    var lastAudioDuration by remember { mutableFloatStateOf(0.0f) }
+    var hasGeneratedAudio by remember { mutableStateOf(ttsEngine.cachedPcmData != null) }
 
-    // Quick Expressive Tags
     val quickAudioTags = listOf("[whisper]", "[mystery]", "[tension]", "[pause]", "[sighs]", "[laughs]", "[gasp]", "[description]")
 
     val scrollState = rememberScrollState()
@@ -125,7 +127,7 @@ fun StudioScreen() {
             .padding(16.dp)
             .verticalScroll(scrollState)
     ) {
-        // Voice Selection Dropdown (All 30 Celestial Voices)
+        // Voice Selection Dropdown
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -208,7 +210,6 @@ fun StudioScreen() {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Speaker Audio Profile Field
                 Text(
                     text = "Audio Profile Persona:",
                     color = TextSecondary,
@@ -238,7 +239,7 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Director's Note Controls Card (Style, Pace, Accent)
+        // Director's Note Controls Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -260,7 +261,6 @@ fun StudioScreen() {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Style Dropdown
                     Box(modifier = Modifier.weight(1f)) {
                         DirectorNotePill(label = "Style", value = selectedStyle) { isStyleMenuOpen = true }
                         DropdownMenu(expanded = isStyleMenuOpen, onDismissRequest = { isStyleMenuOpen = false }, modifier = Modifier.background(DarkCard)) {
@@ -270,7 +270,6 @@ fun StudioScreen() {
                         }
                     }
 
-                    // Pace Dropdown
                     Box(modifier = Modifier.weight(1f)) {
                         DirectorNotePill(label = "Pace", value = selectedPace) { isPaceMenuOpen = true }
                         DropdownMenu(expanded = isPaceMenuOpen, onDismissRequest = { isPaceMenuOpen = false }, modifier = Modifier.background(DarkCard)) {
@@ -280,7 +279,6 @@ fun StudioScreen() {
                         }
                     }
 
-                    // Accent Dropdown
                     Box(modifier = Modifier.weight(1f)) {
                         DirectorNotePill(label = "Accent", value = selectedAccent) { isAccentMenuOpen = true }
                         DropdownMenu(expanded = isAccentMenuOpen, onDismissRequest = { isAccentMenuOpen = false }, modifier = Modifier.background(DarkCard)) {
@@ -295,7 +293,7 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Script Input Card with Character Count
+        // Script Input Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -330,7 +328,7 @@ fun StudioScreen() {
                     onValueChange = { scriptText = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(130.dp),
+                        .height(120.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
@@ -346,7 +344,6 @@ fun StudioScreen() {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Inline Expressive Audio Tag Chips
                 Text(
                     text = "Insert Expressive Tags:",
                     color = TextSecondary,
@@ -388,7 +385,7 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Model Settings (Temperature) & Sonic DSP
+        // Model Settings & Temperature (0.05 step grid)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -400,7 +397,7 @@ fun StudioScreen() {
                     Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "MODEL SETTINGS & SONIC DSP",
+                        text = "MODEL TEMPERATURE & PLAYBACK DSP",
                         color = StatusWarning,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -410,21 +407,25 @@ fun StudioScreen() {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Temperature Slider
+                // Temperature Slider with 0.05 increments
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Model Temperature", color = TextSecondary, fontSize = 12.sp)
+                    Text("Model Temperature (0.05 steps)", color = TextSecondary, fontSize = 12.sp)
                     Text(String.format(Locale.US, "%.2f", temperature), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 Slider(
                     value = temperature,
-                    onValueChange = { temperature = it },
-                    valueRange = 0.0f..2.0f,
+                    onValueChange = {
+                        // Snap exactly to 0.05 increments
+                        temperature = (Math.round(it * 20.0f) / 20.0f).coerceIn(0.05f, 2.0f)
+                    },
+                    valueRange = 0.05f..2.0f,
+                    steps = 38,
                     colors = SliderDefaults.colors(thumbColor = StatusWarning, activeTrackColor = StatusWarning, inactiveTrackColor = BorderSubtle)
                 )
 
                 // Speech Rate Slider
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Speech Rate (Speed)", color = TextSecondary, fontSize = 12.sp)
+                    Text("Local Playback Speed", color = TextSecondary, fontSize = 12.sp)
                     Text(String.format(Locale.US, "%.2fx", speechRate), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 Slider(
@@ -436,7 +437,7 @@ fun StudioScreen() {
 
                 // Pitch Offset Slider
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Pitch Offset", color = TextSecondary, fontSize = 12.sp)
+                    Text("Local Pitch Shift", color = TextSecondary, fontSize = 12.sp)
                     Text(String.format(Locale.US, "%+.1f st", pitchOffset), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 Slider(
@@ -450,36 +451,32 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Synthesize Action Button (Triggers Real Cloud TTS!)
+        // Synthesize Button: Generates and buffers audio (NO AUTO-PLAY)
         Button(
             onClick = {
-                if (isSynthesizing) return@Button
-                isSynthesizing = true
+                if (isGenerating) return@Button
                 playbackStatusText = "Synthesizing audio via Google AI Studio ($selectedVoice)..."
 
                 scope.launch {
-                    val result = ttsEngine.synthesizeAndPlay(
+                    val result = ttsEngine.synthesizeMaster(
                         text = scriptText,
                         voiceName = selectedVoice,
                         audioProfile = audioProfileText,
                         styleNote = selectedStyle,
                         paceNote = selectedPace,
                         accentNote = selectedAccent,
-                        temperature = temperature,
-                        speed = speechRate,
-                        pitchSemitones = pitchOffset
+                        temperature = temperature
                     )
-
-                    isSynthesizing = false
 
                     when (result) {
                         is SynthesisResult.Success -> {
-                            lastAudioDuration = result.durationSeconds.toFloat()
+                            hasGeneratedAudio = true
                             playbackStatusText = String.format(
                                 Locale.US,
-                                "Playing: 24kHz Master Audio (%.1fs)",
+                                "Audio Master Ready (%.1fs). Tap Play below.",
                                 result.durationSeconds
                             )
+                            Toast.makeText(context, "Audio ready! Tap Play to listen.", Toast.LENGTH_SHORT).show()
                         }
                         is SynthesisResult.Error -> {
                             playbackStatusText = "Synthesis failed. Check Settings!"
@@ -488,7 +485,7 @@ fun StudioScreen() {
                     }
                 }
             },
-            enabled = !isSynthesizing,
+            enabled = !isGenerating,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
@@ -500,10 +497,10 @@ fun StudioScreen() {
                 disabledContentColor = TextSecondary
             )
         ) {
-            if (isSynthesizing) {
+            if (isGenerating) {
                 CircularProgressIndicator(color = AccentEmerald, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("SYNTHESIZING SPEECH...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text("GENERATING AUDIO IN CLOUD...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             } else {
                 Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -513,62 +510,148 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Master Audio Playback Bar
+        // Audio Master Player & Interactive Scrubbing Timeline
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = DarkCard),
-            border = BorderStroke(1.dp, BorderSubtle)
+            border = BorderStroke(1.dp, if (hasGeneratedAudio) AccentCyan else BorderSubtle)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = {
-                        if (ttsEngine.isPlaying()) {
-                            ttsEngine.stopPlayback()
-                            playbackStatusText = "Audio playback stopped."
-                        }
-                    },
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(DarkSurface, CircleShape)
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = if (ttsEngine.isPlaying()) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = AccentEmerald
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Play / Pause Toggle Button
+                        IconButton(
+                            onClick = {
+                                if (!hasGeneratedAudio) {
+                                    Toast.makeText(context, "Please synthesize audio first!", Toast.LENGTH_SHORT).show()
+                                    return@IconButton
+                                }
+                                if (isPlaying) {
+                                    ttsEngine.pauseAudio()
+                                } else {
+                                    ttsEngine.playAudio(speechRate, pitchOffset)
+                                }
+                            },
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(if (isPlaying) AccentEmerald else DarkSurface, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play/Pause",
+                                tint = if (isPlaying) PureBlack else (if (hasGeneratedAudio) AccentEmerald else TextSecondary)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Stop Button (Rewinds to start)
+                        IconButton(
+                            onClick = {
+                                if (hasGeneratedAudio) {
+                                    ttsEngine.stopPlayback()
+                                }
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(DarkSurface, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "Stop",
+                                tint = if (hasGeneratedAudio) TextPrimary else TextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    // Download Button: Lights up in Emerald when audio is ready!
+                    Button(
+                        onClick = {
+                            if (!hasGeneratedAudio) return@Button
+                            val result = ttsEngine.saveAudioToDownloads("HybridTTS_${selectedVoice}")
+                            result.fold(
+                                onSuccess = { path ->
+                                    Toast.makeText(context, "Downloaded! $path", Toast.LENGTH_LONG).show()
+                                },
+                                onFailure = { err ->
+                                    Toast.makeText(context, "Export error: ${err.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        },
+                        enabled = hasGeneratedAudio,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (hasGeneratedAudio) AccentEmerald else DarkSurface,
+                            contentColor = PureBlack,
+                            disabledContainerColor = DarkSurface,
+                            disabledContentColor = TextSecondary
+                        ),
+                        border = BorderStroke(1.dp, if (hasGeneratedAudio) AccentEmerald else BorderSubtle)
+                    ) {
+                        Icon(imageVector = Icons.Default.Download, contentDescription = "Download WAV", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "DOWNLOAD WAV",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
+                // Interactive Audio Scrubbing Timeline Slider
+                val currentSeconds = (playbackProgress * ttsEngine.cachedDurationSeconds).toFloat()
+                val totalSeconds = ttsEngine.cachedDurationSeconds.toFloat()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
-                        text = playbackStatusText,
-                        color = TextPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
+                        text = String.format(Locale.US, "%02d:%05.2f", (currentSeconds / 60).toInt(), currentSeconds % 60),
+                        color = if (hasGeneratedAudio) AccentCyan else TextSecondary,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = if (lastAudioDuration > 0f) {
-                            String.format(Locale.US, "Duration: %.2f sec • Voice: %s", lastAudioDuration, selectedVoice)
-                        } else {
-                            "Voice: $selectedVoice • Engine 1 Active"
-                        },
+                        text = String.format(Locale.US, "%02d:%05.2f", (totalSeconds / 60).toInt(), totalSeconds % 60),
                         color = TextSecondary,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .background(if (ttsEngine.isPlaying()) AccentEmerald else TextSecondary, CircleShape)
+                Slider(
+                    value = playbackProgress,
+                    onValueChange = { newFraction ->
+                        if (hasGeneratedAudio) {
+                            ttsEngine.seekToFraction(newFraction)
+                        }
+                    },
+                    enabled = hasGeneratedAudio,
+                    colors = SliderDefaults.colors(
+                        thumbColor = AccentCyan,
+                        activeTrackColor = AccentCyan,
+                        inactiveTrackColor = BorderSubtle,
+                        disabledThumbColor = TextSecondary,
+                        disabledActiveTrackColor = BorderSubtle
+                    )
+                )
+
+                Text(
+                    text = playbackStatusText,
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace
                 )
             }
         }
