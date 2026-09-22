@@ -25,7 +25,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -199,52 +199,49 @@ fun SettingsScreen() {
 
                 ModelRegistryManager.SUPPORTED_TTS_MODELS.forEach { modelId ->
                     val isSelected = activeModelName == modelId
-                    Row(
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 3.dp)
-                            .background(
-                                if (isSelected) DarkSurface else PureBlack,
-                                RoundedCornerShape(8.dp)
-                            )
-                            .border(
-                                1.dp,
-                                if (isSelected) AccentCyan else BorderSubtle,
-                                RoundedCornerShape(8.dp)
-                            )
                             .clickable {
                                 activeModelName = modelId
                                 modelRegistry.setActiveModel(modelId)
                                 connectionCheckStatus = ""
-                            }
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) DarkSurface else PureBlack,
+                        border = BorderStroke(1.dp, if (isSelected) AccentCyan else BorderSubtle)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .background(if (isSelected) AccentCyan else BorderSubtle, CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = when (modelId) {
-                                    ModelRegistryManager.MODEL_GEMINI_3_1_FLASH_TTS -> "Gemini 3.1 Flash TTS Preview (Recommended)"
-                                    ModelRegistryManager.MODEL_GEMINI_2_5_FLASH_TTS -> "Gemini 2.5 Flash TTS Preview"
-                                    ModelRegistryManager.MODEL_GEMINI_2_5_PRO_TTS -> "Gemini 2.5 Pro TTS Preview"
-                                    else -> modelId
-                                },
-                                color = if (isSelected) TextPrimary else TextSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                fontFamily = FontFamily.Monospace
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(if (isSelected) AccentCyan else BorderSubtle, CircleShape)
                             )
-                            Text(
-                                text = modelId,
-                                color = if (isSelected) AccentCyan else TextSecondary,
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = when (modelId) {
+                                        ModelRegistryManager.MODEL_GEMINI_3_1_FLASH_TTS -> "Gemini 3.1 Flash TTS Preview (Recommended)"
+                                        ModelRegistryManager.MODEL_GEMINI_2_5_FLASH_TTS -> "Gemini 2.5 Flash TTS Preview"
+                                        ModelRegistryManager.MODEL_GEMINI_2_5_PRO_TTS -> "Gemini 2.5 Pro TTS Preview"
+                                        else -> modelId
+                                    },
+                                    color = if (isSelected) TextPrimary else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = modelId,
+                                    color = if (isSelected) AccentCyan else TextSecondary,
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
                     }
                 }
@@ -287,7 +284,7 @@ fun SettingsScreen() {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     } else {
-                        Icon(imageVector = Icons.Default.NetworkCheck, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(
