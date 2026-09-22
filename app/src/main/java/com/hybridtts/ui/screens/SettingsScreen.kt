@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Spellcheck
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,9 +60,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hybridtts.core.ApiKeyEntity
+import com.hybridtts.core.CustomLexiconRepository
 import com.hybridtts.core.KeyPoolManager
 import com.hybridtts.core.KeyStatus
+import com.hybridtts.core.LexiconEntry
 import com.hybridtts.core.ModelRegistryManager
+import com.hybridtts.core.StudioStateManager
 import com.hybridtts.ui.theme.AccentCyan
 import com.hybridtts.ui.theme.AccentEmerald
 import com.hybridtts.ui.theme.BorderSubtle
@@ -81,8 +85,8 @@ fun SettingsScreen() {
     val scope = rememberCoroutineScope()
     val keyPool = remember { KeyPoolManager.getInstance(context) }
     val modelRegistry = remember { ModelRegistryManager.getInstance(context) }
+    val lexiconRepo = remember { CustomLexiconRepository.getInstance(context) }
 
-    var selectedEngineIndex by remember { mutableIntStateOf(0) }
     var newApiKeyInput by remember { mutableStateOf("") }
     var keyList by remember { mutableStateOf<List<ApiKeyEntity>>(emptyList()) }
     var activeModelName by remember { mutableStateOf(modelRegistry.getActiveModel()) }
@@ -90,18 +94,24 @@ fun SettingsScreen() {
     var isCheckingConnection by remember { mutableStateOf(false) }
     var connectionCheckStatus by remember { mutableStateOf("") }
 
+    // Lexicon UI state
+    var lexiconList by remember { mutableStateOf<List<LexiconEntry>>(emptyList()) }
+    var newLexiconWord by remember { mutableStateOf("") }
+    var newLexiconReplacement by remember { mutableStateOf("") }
+
     var cpuThreads by remember { mutableFloatStateOf(2f) }
     var thermalProtection by remember { mutableStateOf(true) }
     var ringBufferStreaming by remember { mutableStateOf(true) }
 
     val scrollState = rememberScrollState()
 
-    fun reloadKeys() {
+    fun reloadAll() {
         keyList = keyPool.getAllKeys()
+        lexiconList = lexiconRepo.getAllEntries()
     }
 
     LaunchedEffect(Unit) {
-        reloadKeys()
+        reloadAll()
     }
 
     Column(
@@ -140,27 +150,27 @@ fun SettingsScreen() {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 EngineOptionRow(
-                    name = "Engine 1: Direct Cloud TTS (Live Today)",
-                    desc = "Google AI Studio High-Fi Master Audio streaming",
-                    isSelected = selectedEngineIndex == 0,
-                    onSelect = { selectedEngineIndex = 0 }
+                    name = "Engine 1: Direct Cloud TTS (Live)",
+                    desc = "Google AI Studio High-Fi Master Audio preview",
+                    isSelected = StudioStateManager.activeEngineMode == 0,
+                    onSelect = { StudioStateManager.activeEngineMode = 0 }
                 )
                 EngineOptionRow(
-                    name = "Engine 2: Cloud Hybrid (Staged Day 4)",
-                    desc = "Gemini AI Director + Local ONNX speech synthesis",
-                    isSelected = selectedEngineIndex == 1,
-                    onSelect = { selectedEngineIndex = 1 }
+                    name = "Engine 2: Cloud Hybrid (Default Production)",
+                    desc = "Gemini AI Director + Prosody micro-pause stitching",
+                    isSelected = StudioStateManager.activeEngineMode == 1,
+                    onSelect = { StudioStateManager.activeEngineMode = 1 }
                 )
                 EngineOptionRow(
-                    name = "Engine 3: 100% Fully Local ONNX (Staged Day 5)",
-                    desc = "Offline Kokoro-82M int8 engine (Zero cloud, unlimited)",
-                    isSelected = selectedEngineIndex == 2,
-                    onSelect = { selectedEngineIndex = 2 }
+                    name = "Engine 3: 100% Fully Local ONNX (Offline)",
+                    desc = "Offline Kokoro-82M neural engine (Airplane Mode Ready)",
+                    isSelected = StudioStateManager.activeEngineMode == 2,
+                    onSelect = { StudioStateManager.activeEngineMode = 2 }
                 )
             }
         }
 
-        // Dedicated Google AI Studio TTS Model Selector Card
+        // SQLite Custom Pronunciation Lexicon Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -173,99 +183,97 @@ fun SettingsScreen() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "GOOGLE AI STUDIO TTS MODEL",
-                        color = AccentCyan,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = DarkSurface,
-                        border = BorderStroke(1.dp, BorderSubtle)
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Spellcheck,
+                            contentDescription = null,
+                            tint = AccentEmerald,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "3 PREVIEW MODELS",
+                            text = "SQLITE PRONUNCIATION LEXICON",
                             color = AccentEmerald,
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
                         )
                     }
+
+                    Text(
+                        text = "${lexiconList.size} Rules Active",
+                        color = AccentCyan,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Intercepts words before local neural synthesis to enforce custom phonetic spellings.",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                ModelRegistryManager.SUPPORTED_TTS_MODELS.forEach { modelId ->
-                    val isSelected = activeModelName == modelId
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 3.dp)
-                            .clickable {
-                                activeModelName = modelId
-                                modelRegistry.setActiveModel(modelId)
-                                connectionCheckStatus = ""
-                            },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newLexiconWord,
+                        onValueChange = { newLexiconWord = it },
+                        modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
-                        color = if (isSelected) DarkSurface else PureBlack,
-                        border = BorderStroke(1.dp, if (isSelected) AccentCyan else BorderSubtle)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .background(if (isSelected) AccentCyan else BorderSubtle, CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = when (modelId) {
-                                        ModelRegistryManager.MODEL_GEMINI_3_1_FLASH_TTS -> "Gemini 3.1 Flash TTS Preview (Recommended)"
-                                        ModelRegistryManager.MODEL_GEMINI_2_5_FLASH_TTS -> "Gemini 2.5 Flash TTS Preview"
-                                        ModelRegistryManager.MODEL_GEMINI_2_5_PRO_TTS -> "Gemini 2.5 Pro TTS Preview"
-                                        else -> modelId
-                                    },
-                                    color = if (isSelected) TextPrimary else TextSecondary,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(
-                                    text = modelId,
-                                    color = if (isSelected) AccentCyan else TextSecondary,
-                                    fontSize = 9.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-                    }
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = DarkSurface,
+                            unfocusedContainerColor = DarkSurface,
+                            focusedBorderColor = AccentEmerald,
+                            unfocusedBorderColor = BorderSubtle,
+                            cursorColor = AccentEmerald
+                        ),
+                        placeholder = { Text("Word (e.g. ASUS)", color = TextSecondary, fontSize = 11.sp) },
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = newLexiconReplacement,
+                        onValueChange = { newLexiconReplacement = it },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = DarkSurface,
+                            unfocusedContainerColor = DarkSurface,
+                            focusedBorderColor = AccentEmerald,
+                            unfocusedBorderColor = BorderSubtle,
+                            cursorColor = AccentEmerald
+                        ),
+                        placeholder = { Text("Sounds like (ay-soos)", color = TextSecondary, fontSize = 11.sp) },
+                        singleLine = true
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Connection & Auto-Checker Test Button
                 Button(
                     onClick = {
-                        val activeKey = keyPool.getNextActiveKey()
-                        if (activeKey == null) {
-                            Toast.makeText(context, "Please add an API key first!", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        isCheckingConnection = true
-                        connectionCheckStatus = "Testing handshake with Google AI Studio..."
-
-                        scope.launch {
-                            val result = modelRegistry.testConnection(activeKey, activeModelName)
-                            isCheckingConnection = false
-                            connectionCheckStatus = result.fold(
-                                onSuccess = { it },
-                                onFailure = { "Handshake Failed: ${it.localizedMessage}" }
+                        if (newLexiconWord.isNotBlank() && newLexiconReplacement.isNotBlank()) {
+                            lexiconRepo.addOrUpdateEntry(
+                                LexiconEntry(
+                                    originalWord = newLexiconWord,
+                                    phoneticReplacement = newLexiconReplacement
+                                )
                             )
+                            newLexiconWord = ""
+                            newLexiconReplacement = ""
+                            reloadAll()
+                            Toast.makeText(context, "Pronunciation rule added!", Toast.LENGTH_SHORT).show()
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -276,33 +284,47 @@ fun SettingsScreen() {
                     ),
                     border = BorderStroke(1.dp, AccentEmerald)
                 ) {
-                    if (isCheckingConnection) {
-                        CircularProgressIndicator(
-                            color = AccentEmerald,
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    } else {
-                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                    }
-                    Text(
-                        text = "TEST API KEY & MODEL CONNECTION",
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("ADD PRONUNCIATION RULE", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
 
-                if (connectionCheckStatus.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = connectionCheckStatus,
-                        color = if (connectionCheckStatus.startsWith("HTTP 200")) AccentEmerald else StatusError,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                if (lexiconList.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    lexiconList.forEach { entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .background(DarkSurface, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "${entry.originalWord}  ➔  ${entry.phoneticReplacement}",
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                if (entry.ipaNotation.isNotBlank()) {
+                                    Text(text = "IPA: ${entry.ipaNotation}", color = AccentCyan, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    lexiconRepo.deleteEntry(entry.id)
+                                    reloadAll()
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = null, tint = StatusError, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -345,14 +367,6 @@ fun SettingsScreen() {
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Add free Google AI Studio keys. The dispatcher automatically rotates keys and sets 24-hour cooldowns on HTTP 429 quota exhaustion.",
-                    color = TextSecondary,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp
-                )
-
                 Spacer(modifier = Modifier.height(10.dp))
 
                 OutlinedTextField(
@@ -379,10 +393,8 @@ fun SettingsScreen() {
                     onClick = {
                         if (keyPool.addKey(newApiKeyInput)) {
                             newApiKeyInput = ""
-                            reloadKeys()
-                            Toast.makeText(context, "Key securely added to vault!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Invalid or duplicate key", Toast.LENGTH_SHORT).show()
+                            reloadAll()
+                            Toast.makeText(context, "Key added to vault!", Toast.LENGTH_SHORT).show()
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -395,29 +407,7 @@ fun SettingsScreen() {
                 ) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("ADD KEY TO ENCRYPTED VAULT", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                }
-
-                if (keyList.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "ENCRYPTED KEY POOL ROTATION LIST",
-                        color = TextSecondary,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    keyList.forEach { entity ->
-                        KeyRowItem(
-                            keyEntity = entity,
-                            onDelete = {
-                                keyPool.removeKey(entity.key)
-                                reloadKeys()
-                            }
-                        )
-                    }
+                    Text("ADD KEY TO VAULT", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                 }
             }
         }
@@ -474,122 +464,7 @@ fun SettingsScreen() {
                         inactiveTrackColor = BorderSubtle
                     )
                 )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Thermal Guard Watchdog", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text("Auto-pause synthesis at 42°C, resume at 38°C", color = TextSecondary, fontSize = 10.sp)
-                    }
-                    Switch(
-                        checked = thermalProtection,
-                        onCheckedChange = { thermalProtection = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = PureBlack,
-                            checkedTrackColor = StatusWarning,
-                            uncheckedTrackColor = DarkSurface
-                        )
-                    )
-                }
             }
-        }
-
-        // Storage Pipeline Switch
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkCard),
-            border = BorderStroke(1.dp, BorderSubtle)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "STORAGE WRITE PIPELINE",
-                        color = TextPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = if (ringBufferStreaming) "Option A: 64KB Ring-Buffer (Flash Safe)" else "Option B: Modular Discrete Chunks",
-                        color = AccentEmerald,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-                Switch(
-                    checked = ringBufferStreaming,
-                    onCheckedChange = { ringBufferStreaming = it },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = PureBlack,
-                        checkedTrackColor = AccentEmerald,
-                        uncheckedTrackColor = DarkSurface
-                    )
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun KeyRowItem(keyEntity: ApiKeyEntity, onDelete: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .background(DarkSurface, RoundedCornerShape(6.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(
-                            when (keyEntity.status) {
-                                KeyStatus.ACTIVE -> AccentEmerald
-                                KeyStatus.COOLDOWN -> StatusWarning
-                                KeyStatus.DEPLETED -> StatusError
-                            },
-                            CircleShape
-                        )
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = keyEntity.maskedKey,
-                    color = TextPrimary,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            Text(
-                text = "Requests: ${keyEntity.requestCount} • ${keyEntity.status.name}",
-                color = TextSecondary,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
-            )
-        }
-
-        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = "Delete key",
-                tint = StatusError,
-                modifier = Modifier.size(16.dp)
-            )
         }
     }
 }
