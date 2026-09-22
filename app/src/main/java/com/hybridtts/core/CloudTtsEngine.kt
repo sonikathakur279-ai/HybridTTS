@@ -53,13 +53,11 @@ class CloudTtsEngine private constructor(private val context: Context) {
     private val keyPool = KeyPoolManager.getInstance(context)
     private val modelRegistry = ModelRegistryManager.getInstance(context)
 
-    // Persistent Audio Cache: Never lost on stop or tab switch
     var cachedPcmData: ByteArray? = null
     var cachedDurationSeconds: Double = 0.0
 
     private var activeAudioTrack: AudioTrack? = null
 
-    // Playback state flows
     private val _isPlayingState = MutableStateFlow(false)
     val isPlayingState: StateFlow<Boolean> = _isPlayingState.asStateFlow()
 
@@ -91,7 +89,6 @@ class CloudTtsEngine private constructor(private val context: Context) {
         }
     }
 
-    // Public method for HybridDirectorEngine to push stitched composite audio directly
     fun loadExternalMasterAudio(pcmData: ByteArray) {
         cachedPcmData = pcmData
         cachedDurationSeconds = pcmData.size.toDouble() / (SAMPLE_RATE_24K * 2)
@@ -140,7 +137,8 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
             val finalPromptText = "${contextDirectives}$text"
 
-            val roundedTemp = (Math.round(temperature * 20.0f) / 20.0f).coerceIn(0.05f, 2.0f)
+            // Constrain temperature to safe 0.1 to 1.2 range for speech models
+            val safeTemp = (Math.round(temperature * 20.0f) / 20.0f).coerceIn(0.1f, 1.2f)
 
             val jsonPayload = JSONObject().apply {
                 val contents = JSONArray().apply {
@@ -158,7 +156,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 put("contents", contents)
 
                 val generationConfig = JSONObject().apply {
-                    put("temperature", roundedTemp.toDouble())
+                    put("temperature", safeTemp.toDouble())
                     val modalities = JSONArray().apply {
                         put("AUDIO")
                     }
@@ -211,6 +209,7 @@ class CloudTtsEngine private constructor(private val context: Context) {
                 val content = candidates.getJSONObject(0).optJSONObject("content")
                 val parts = content?.optJSONArray("parts")
                 var base64Data: String? = null
+                var returnedTextReason: String? = null
 
                 if (parts != null) {
                     for (i in 0 until parts.length()) {
@@ -220,12 +219,16 @@ class CloudTtsEngine private constructor(private val context: Context) {
                             base64Data = inlineData.optString("data", null)
                             if (base64Data != null) break
                         }
+                        if (part.has("text")) {
+                            returnedTextReason = part.optString("text")
+                        }
                     }
                 }
 
                 if (base64Data == null) {
                     _isGeneratingState.value = false
-                    return@withContext SynthesisResult.Error("Audio payload missing in response structure.")
+                    val detail = returnedTextReason ?: "Model output text instead of audio. Lower temperature to 1.00!"
+                    return@withContext SynthesisResult.Error("Model Notice: $detail")
                 }
 
                 val rawAudioBytes = Base64.decode(base64Data, Base64.DEFAULT)
@@ -325,24 +328,35 @@ class CloudTtsEngine private constructor(private val context: Context) {
         try {
             activeAudioTrack?.let {
                 if (it.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                    it.stop()
+                    it.pause()
                 }
-                it.reloadStaticData()
+                it.playbackHeadPosition = 0
             }
         } catch (_: Exception) {}
         _isPlayingState.value = false
         _playbackProgressFraction.value = 0f
     }
 
-    fun seekToFraction(fraction: Float) {
+    // MediaTek Helio G85 hardware seek: pause -> reposition head -> resume
+    fun seekToFraction(fraction: Float, autoResume: Boolean = true) {
         val track = activeAudioTrack ?: return
         val pcm = cachedPcmData ?: return
         val totalFrames = pcm.size / 2
         val targetFrame = (fraction.coerceIn(0f, 1f) * totalFrames).toInt()
 
+        val wasPlaying = _isPlayingState.value
+
         try {
+            if (wasPlaying) {
+                track.pause()
+            }
             track.playbackHeadPosition = targetFrame
             _playbackProgressFraction.value = fraction.coerceIn(0f, 1f)
+
+            if (wasPlaying && autoResume) {
+                track.play()
+                startProgressTracker()
+            }
         } catch (_: Exception) {}
     }
 
@@ -357,12 +371,10 @@ class CloudTtsEngine private constructor(private val context: Context) {
 
                 _playbackProgressFraction.value = progress.coerceIn(0f, 1f)
 
-                if (currentFrame >= totalFrames || activeAudioTrack?.playState != AudioTrack.PLAYSTATE_PLAYING) {
-                    if (currentFrame >= totalFrames) {
-                        _isPlayingState.value = false
-                        _playbackProgressFraction.value = 0f
-                        activeAudioTrack?.reloadStaticData()
-                    }
+                if (currentFrame >= totalFrames) {
+                    _isPlayingState.value = false
+                    _playbackProgressFraction.value = 0f
+                    activeAudioTrack?.playbackHeadPosition = 0
                     break
                 }
                 delay(50)
