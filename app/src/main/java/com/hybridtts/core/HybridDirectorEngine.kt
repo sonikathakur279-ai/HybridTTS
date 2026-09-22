@@ -96,26 +96,25 @@ class HybridDirectorEngine private constructor(private val context: Context) {
                 return@withContext SynthesisResult.Error("Failed to assemble composite PCM audio stream.")
             }
 
-            // Push final master into playback engine cache
-            cloudTtsEngine.cachedPcmData = stitchedPcm
-            cloudTtsEngine.cachedDurationSeconds =
-                stitchedPcm.size.toDouble() / (CloudTtsEngine.SAMPLE_RATE_24K * 2)
+            // Push final master into playback engine cache cleanly
+            cloudTtsEngine.loadExternalMasterAudio(stitchedPcm)
 
-            onStatusUpdate("Hybrid Master Assembled (Duration: ${String.format(java.util.Locale.US, "%.1fs", cloudTtsEngine.cachedDurationSeconds)})")
+            val durationSec = cloudTtsEngine.cachedDurationSeconds
+            onStatusUpdate("Hybrid Master Assembled (Duration: ${String.format(java.util.Locale.US, "%.1fs", durationSec)})")
 
             // Post system status bar notification
-            notificationManager.notifySynthesisComplete(voiceName, cloudTtsEngine.cachedDurationSeconds)
+            notificationManager.notifySynthesisComplete(voiceName, durationSec)
 
             SynthesisResult.Success(
                 sampleRate = CloudTtsEngine.SAMPLE_RATE_24K,
-                durationSeconds = cloudTtsEngine.cachedDurationSeconds
+                durationSeconds = durationSec
             )
         }
     }
 
     private fun generateSilencePcm(durationMs: Int, sampleRate: Int): ByteArray {
         val totalSamples = (sampleRate * (durationMs / 1000.0)).toInt()
-        val totalBytes = totalSamples * 2 // 16-bit mono = 2 bytes per sample
-        return ByteArray(totalBytes) // Filled with 0x00 (pure digital zero amplitude)
+        val totalBytes = totalSamples * 2
+        return ByteArray(totalBytes)
     }
 }
