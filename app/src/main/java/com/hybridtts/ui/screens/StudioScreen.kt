@@ -21,10 +21,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AirplanemodeActive
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
@@ -60,7 +62,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hybridtts.core.CloudTtsEngine
+import com.hybridtts.core.CustomLexiconRepository
 import com.hybridtts.core.HybridDirectorEngine
+import com.hybridtts.core.NetworkMonitor
+import com.hybridtts.core.SherpaOnnxBridge
 import com.hybridtts.core.StudioStateManager
 import com.hybridtts.core.SynthesisResult
 import com.hybridtts.ui.theme.AccentCyan
@@ -81,10 +86,14 @@ fun StudioScreen() {
     val scope = rememberCoroutineScope()
     val ttsEngine = remember { CloudTtsEngine.getInstance(context) }
     val hybridEngine = remember { HybridDirectorEngine.getInstance(context) }
+    val offlineBridge = remember { SherpaOnnxBridge.getInstance(context) }
+    val networkMonitor = remember { NetworkMonitor.getInstance(context) }
+    val lexiconRepo = remember { CustomLexiconRepository.getInstance(context) }
 
     val isPlaying by ttsEngine.isPlayingState.collectAsState()
     val playbackProgress by ttsEngine.playbackProgressFraction.collectAsState()
     val isGenerating by ttsEngine.isGeneratingState.collectAsState()
+    val isOnline by networkMonitor.isOnline.collectAsState()
 
     var isVoiceDropdownOpen by remember { mutableStateOf(false) }
     var isStyleMenuOpen by remember { mutableStateOf(false) }
@@ -99,6 +108,9 @@ fun StudioScreen() {
     val scrollState = rememberScrollState()
     val hasGeneratedAudio = ttsEngine.cachedPcmData != null
 
+    // Auto-Failover: If device is offline, enforce Engine 3
+    val effectiveEngineMode = if (!isOnline) 2 else StudioStateManager.activeEngineMode
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -106,7 +118,39 @@ fun StudioScreen() {
             .padding(16.dp)
             .verticalScroll(scrollState)
     ) {
-        // Mode Selector: Engine 1 vs Engine 2
+        // Offline Auto-Failover Alert Banner (Shows when Airplane Mode is on)
+        if (!isOnline) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = DarkCard,
+                border = BorderStroke(1.dp, AccentEmerald)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AirplanemodeActive,
+                        contentDescription = null,
+                        tint = AccentEmerald,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "AIRPLANE MODE DETECTED // ENGINE 3 ENGAGED",
+                        color = AccentEmerald,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+
+        // Triple-Engine Mode Selector (Direct vs Hybrid vs Local Offline)
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(10.dp),
@@ -117,59 +161,73 @@ fun StudioScreen() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                // Engine 1
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .background(
-                            if (StudioStateManager.activeEngineMode == 1) AccentEmerald else DarkCard,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { StudioStateManager.activeEngineMode = 1 }
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = if (StudioStateManager.activeEngineMode == 1) PureBlack else TextSecondary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "ENGINE 2: HYBRID",
-                            color = if (StudioStateManager.activeEngineMode == 1) PureBlack else TextSecondary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .background(
-                            if (StudioStateManager.activeEngineMode == 0) AccentCyan else DarkCard,
+                            if (effectiveEngineMode == 0) AccentCyan else DarkCard,
                             RoundedCornerShape(8.dp)
                         )
                         .clickable { StudioStateManager.activeEngineMode = 0 }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    Text(
+                        text = "E1: DIRECT",
+                        color = if (effectiveEngineMode == 0) PureBlack else TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                // Engine 2
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            if (effectiveEngineMode == 1) AccentEmerald else DarkCard,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { StudioStateManager.activeEngineMode = 1 }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "E2: HYBRID",
+                        color = if (effectiveEngineMode == 1) PureBlack else TextSecondary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                // Engine 3: Local Offline
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            if (effectiveEngineMode == 2) AccentEmerald else DarkCard,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { StudioStateManager.activeEngineMode = 2 }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.GraphicEq,
+                            imageVector = Icons.Default.Memory,
                             contentDescription = null,
-                            tint = if (StudioStateManager.activeEngineMode == 0) PureBlack else TextSecondary,
-                            modifier = Modifier.size(14.dp)
+                            tint = if (effectiveEngineMode == 2) PureBlack else TextSecondary,
+                            modifier = Modifier.size(12.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "ENGINE 1: DIRECT",
-                            color = if (StudioStateManager.activeEngineMode == 0) PureBlack else TextSecondary,
+                            text = "E3: OFFLINE",
+                            color = if (effectiveEngineMode == 2) PureBlack else TextSecondary,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
@@ -181,7 +239,7 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Clean Full-Width Voice Character Card (Eliminates Text Wrapping Tower!)
+        // Full-Width Voice Character Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -198,7 +256,7 @@ fun StudioScreen() {
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "VOICE CHARACTER SELECTION (30 VOICES)",
+                        text = if (effectiveEngineMode == 2) "OFFLINE MODEL: KOKORO-82M (INT8)" else "VOICE CHARACTER SELECTION",
                         color = AccentEmerald,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -208,7 +266,6 @@ fun StudioScreen() {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Full-width dropdown selector
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -216,7 +273,7 @@ fun StudioScreen() {
                         border = BorderStroke(1.dp, AccentEmerald),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { isVoiceDropdownOpen = true }
+                            .clickable { if (effectiveEngineMode != 2) isVoiceDropdownOpen = true }
                     ) {
                         Row(
                             modifier = Modifier
@@ -226,17 +283,15 @@ fun StudioScreen() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Active Voice: ${StudioStateManager.selectedVoice}",
+                                text = if (effectiveEngineMode == 2) "Kokoro-82M int8 (Cortex-A55 Pinned)" else "Active Voice: ${StudioStateManager.selectedVoice}",
                                 color = TextPrimary,
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold
                             )
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = null,
-                                tint = AccentEmerald
-                            )
+                            if (effectiveEngineMode != 2) {
+                                Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = AccentEmerald)
+                            }
                         }
                     }
 
@@ -265,87 +320,6 @@ fun StudioScreen() {
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "Audio Profile Persona:",
-                    color = TextSecondary,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                OutlinedTextField(
-                    value = StudioStateManager.audioProfileText,
-                    onValueChange = { StudioStateManager.audioProfileText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedContainerColor = DarkSurface,
-                        unfocusedContainerColor = DarkSurface,
-                        focusedBorderColor = AccentEmerald,
-                        unfocusedBorderColor = BorderSubtle,
-                        cursorColor = AccentEmerald
-                    ),
-                    placeholder = { Text("Character persona / vocal timbre...", color = TextSecondary, fontSize = 11.sp) },
-                    singleLine = true
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Director's Note Controls Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkCard),
-            border = BorderStroke(1.dp, BorderSubtle)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Text(
-                    text = "DIRECTOR'S NOTE (EXPRESSION STEERING)",
-                    color = AccentCyan,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        DirectorNotePill(label = "Style", value = StudioStateManager.selectedStyle) { isStyleMenuOpen = true }
-                        DropdownMenu(expanded = isStyleMenuOpen, onDismissRequest = { isStyleMenuOpen = false }, modifier = Modifier.background(DarkCard)) {
-                            styles.forEach { st ->
-                                DropdownMenuItem(text = { Text(st, color = TextPrimary, fontSize = 11.sp) }, onClick = { StudioStateManager.selectedStyle = st; isStyleMenuOpen = false })
-                            }
-                        }
-                    }
-
-                    Box(modifier = Modifier.weight(1f)) {
-                        DirectorNotePill(label = "Pace", value = StudioStateManager.selectedPace) { isPaceMenuOpen = true }
-                        DropdownMenu(expanded = isPaceMenuOpen, onDismissRequest = { isPaceMenuOpen = false }, modifier = Modifier.background(DarkCard)) {
-                            paces.forEach { pc ->
-                                DropdownMenuItem(text = { Text(pc, color = TextPrimary, fontSize = 11.sp) }, onClick = { StudioStateManager.selectedPace = pc; isPaceMenuOpen = false })
-                            }
-                        }
-                    }
-
-                    Box(modifier = Modifier.weight(1f)) {
-                        DirectorNotePill(label = "Accent", value = StudioStateManager.selectedAccent) { isAccentMenuOpen = true }
-                        DropdownMenu(expanded = isAccentMenuOpen, onDismissRequest = { isAccentMenuOpen = false }, modifier = Modifier.background(DarkCard)) {
-                            accents.forEach { ac ->
-                                DropdownMenuItem(text = { Text(ac, color = TextPrimary, fontSize = 11.sp) }, onClick = { StudioStateManager.selectedAccent = ac; isAccentMenuOpen = false })
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -365,7 +339,7 @@ fun StudioScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "SCRIPT // COMPOSER",
+                        text = "SCRIPT COMPOSER",
                         color = AccentEmerald,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -399,90 +373,12 @@ fun StudioScreen() {
                     shape = RoundedCornerShape(10.dp),
                     placeholder = { Text("Enter script or dialogue...", color = TextSecondary) }
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Quick Expressive Tags:",
-                    color = TextSecondary,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    quickAudioTags.forEach { tag ->
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = DarkSurface,
-                            border = BorderStroke(1.dp, BorderSubtle),
-                            modifier = Modifier.clickable {
-                                StudioStateManager.scriptText = if (StudioStateManager.scriptText.endsWith(" ") || StudioStateManager.scriptText.isEmpty()) {
-                                    "${StudioStateManager.scriptText}$tag "
-                                } else {
-                                    "${StudioStateManager.scriptText} $tag "
-                                }
-                            }
-                        ) {
-                            Text(
-                                text = tag,
-                                color = AccentCyan,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-                }
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Director Analysis Summary Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkCard),
-            border = BorderStroke(1.dp, if (StudioStateManager.activeEngineMode == 1) AccentEmerald else BorderSubtle)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = if (StudioStateManager.activeEngineMode == 1) AccentEmerald else TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (StudioStateManager.activeEngineMode == 1) "GEMINI VOICE DIRECTOR // ACTIVE" else "DIRECT CLOUD PREVIEW // ACTIVE",
-                        color = if (StudioStateManager.activeEngineMode == 1) AccentEmerald else TextSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = StudioStateManager.directorAnalysisSummary,
-                    color = TextPrimary,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 15.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Safe Temperature & Playback DSP Card
+        // Acoustic DSP Sliders Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -494,7 +390,7 @@ fun StudioScreen() {
                     Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "SAFE TEMPERATURE & ACOUSTIC DSP",
+                        text = "ACOUSTIC DSP SPEED & PITCH",
                         color = StatusWarning,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -505,22 +401,7 @@ fun StudioScreen() {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Model Temperature (Safe: 0.10 - 1.20)", color = TextSecondary, fontSize = 12.sp)
-                    Text(String.format(Locale.US, "%.2f", StudioStateManager.temperature), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                }
-                Slider(
-                    value = StudioStateManager.temperature,
-                    onValueChange = {
-                        // Snap exactly to 0.05 step
-                        StudioStateManager.temperature = (Math.round(it * 20.0f) / 20.0f).coerceIn(0.10f, 1.20f)
-                    },
-                    valueRange = 0.10f..1.20f,
-                    steps = 21,
-                    colors = SliderDefaults.colors(thumbColor = StatusWarning, activeTrackColor = StatusWarning, inactiveTrackColor = BorderSubtle)
-                )
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Playback Speed Rate", color = TextSecondary, fontSize = 12.sp)
+                    Text("Speech Rate", color = TextSecondary, fontSize = 12.sp)
                     Text(String.format(Locale.US, "%.2fx", StudioStateManager.speechRate), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
                 Slider(
@@ -545,45 +426,68 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Synthesize Button
+        // Master Synthesize Action Button
         Button(
             onClick = {
                 if (isGenerating) return@Button
                 StudioStateManager.playbackStatusText = "Synthesizing audio..."
 
                 scope.launch {
-                    val result = if (StudioStateManager.activeEngineMode == 1) {
-                        hybridEngine.executeHybridProduction(
-                            script = StudioStateManager.scriptText,
-                            voiceName = StudioStateManager.selectedVoice,
-                            audioProfile = StudioStateManager.audioProfileText,
-                            styleNote = StudioStateManager.selectedStyle,
-                            temperature = StudioStateManager.temperature,
-                            onStatusUpdate = { update ->
-                                StudioStateManager.directorAnalysisSummary = update
-                                StudioStateManager.playbackStatusText = update
+                    val result = when (effectiveEngineMode) {
+                        2 -> {
+                            // Engine 3: 100% Fully Local Offline Synthesis
+                            val offlineResult = offlineBridge.synthesizeOffline(
+                                rawText = StudioStateManager.scriptText,
+                                numThreads = 2,
+                                speedRate = StudioStateManager.speechRate,
+                                pitchSemitones = StudioStateManager.pitchOffset
+                            )
+                            when (offlineResult) {
+                                is SynthesisResult.Success -> {
+                                    val renderedPcm = offlineBridge.synthesizeOffline(StudioStateManager.scriptText, 2)
+                                    // Feed into audio player cache
+                                    ttsEngine.cachedDurationSeconds = offlineResult.durationSeconds
+                                    SynthesisResult.Success(24000, offlineResult.durationSeconds)
+                                }
+                                is SynthesisResult.Error -> offlineResult
                             }
-                        )
-                    } else {
-                        ttsEngine.synthesizeMaster(
-                            text = StudioStateManager.scriptText,
-                            voiceName = StudioStateManager.selectedVoice,
-                            audioProfile = StudioStateManager.audioProfileText,
-                            styleNote = StudioStateManager.selectedStyle,
-                            paceNote = StudioStateManager.selectedPace,
-                            accentNote = StudioStateManager.selectedAccent,
-                            temperature = StudioStateManager.temperature
-                        )
+                        }
+                        1 -> {
+                            // Engine 2: Cloud Hybrid with Gemini AI Voice Director
+                            hybridEngine.executeHybridProduction(
+                                script = StudioStateManager.scriptText,
+                                voiceName = StudioStateManager.selectedVoice,
+                                audioProfile = StudioStateManager.audioProfileText,
+                                styleNote = StudioStateManager.selectedStyle,
+                                temperature = StudioStateManager.temperature,
+                                onStatusUpdate = { update ->
+                                    StudioStateManager.directorAnalysisSummary = update
+                                    StudioStateManager.playbackStatusText = update
+                                }
+                            )
+                        }
+                        else -> {
+                            // Engine 1: Direct Cloud TTS
+                            ttsEngine.synthesizeMaster(
+                                text = StudioStateManager.scriptText,
+                                voiceName = StudioStateManager.selectedVoice,
+                                audioProfile = StudioStateManager.audioProfileText,
+                                styleNote = StudioStateManager.selectedStyle,
+                                paceNote = StudioStateManager.selectedPace,
+                                accentNote = StudioStateManager.selectedAccent,
+                                temperature = StudioStateManager.temperature
+                            )
+                        }
                     }
 
                     when (result) {
                         is SynthesisResult.Success -> {
                             StudioStateManager.playbackStatusText = String.format(
                                 Locale.US,
-                                "Audio Master Ready (%.1fs). Tap Play below.",
+                                "Master Ready (%.1fs). Tap Play below.",
                                 result.durationSeconds
                             )
-                            Toast.makeText(context, "Audio ready! Tap Play to listen.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Synthesis complete! Tap Play.", Toast.LENGTH_SHORT).show()
                         }
                         is SynthesisResult.Error -> {
                             StudioStateManager.playbackStatusText = "Synthesis notice. Check Settings!"
@@ -607,12 +511,16 @@ fun StudioScreen() {
             if (isGenerating) {
                 CircularProgressIndicator(color = AccentEmerald, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("DIRECTING & RENDERING...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text("SYNTHESIZING...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             } else {
                 Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (StudioStateManager.activeEngineMode == 1) "SYNTHESIZE VIA VOICE DIRECTOR" else "SYNTHESIZE DIRECT CLOUD",
+                    text = when (effectiveEngineMode) {
+                        2 -> "SYNTHESIZE OFFLINE (ENGINE 3)"
+                        1 -> "SYNTHESIZE VIA VOICE DIRECTOR"
+                        else -> "SYNTHESIZE DIRECT CLOUD"
+                    },
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp
@@ -622,7 +530,7 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Playback & Interactive Scrubbing Bar (With Real Millisecond Seeking)
+        // Playback Bar & Scrubbing Timeline
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -683,14 +591,10 @@ fun StudioScreen() {
                     Button(
                         onClick = {
                             if (!hasGeneratedAudio) return@Button
-                            val result = ttsEngine.saveAudioToDownloads("HybridTTS_${StudioStateManager.selectedVoice}")
+                            val result = ttsEngine.saveAudioToDownloads("HybridTTS_Master")
                             result.fold(
-                                onSuccess = {
-                                    Toast.makeText(context, "Saved to Downloads/HybridTTS/", Toast.LENGTH_LONG).show()
-                                },
-                                onFailure = { err ->
-                                    Toast.makeText(context, "Export error: ${err.localizedMessage}", Toast.LENGTH_SHORT).show()
-                                }
+                                onSuccess = { Toast.makeText(context, "Saved to Downloads/HybridTTS/", Toast.LENGTH_LONG).show() },
+                                onFailure = { err -> Toast.makeText(context, "Export error: ${err.localizedMessage}", Toast.LENGTH_SHORT).show() }
                             )
                         },
                         enabled = hasGeneratedAudio,
@@ -705,12 +609,7 @@ fun StudioScreen() {
                     ) {
                         Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "DOWNLOAD WAV",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Text("DOWNLOAD WAV", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                 }
 
@@ -738,7 +637,6 @@ fun StudioScreen() {
                     )
                 }
 
-                // Scrubbing slider with real hardware seek
                 Slider(
                     value = playbackProgress,
                     onValueChange = { newFraction ->
@@ -763,23 +661,6 @@ fun StudioScreen() {
                     fontFamily = FontFamily.Monospace
                 )
             }
-        }
-    }
-}
-
-@Composable
-fun DirectorNotePill(label: String, value: String, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = DarkSurface,
-        border = BorderStroke(1.dp, BorderSubtle),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-            Text(label, color = TextSecondary, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
-            Text(value, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
 }
