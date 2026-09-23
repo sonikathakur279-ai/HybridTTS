@@ -11,8 +11,8 @@ android {
         applicationId = "com.hybridtts"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.0.0-DAY7"
+        versionCode = 8
+        versionName = "1.0.0-DAY8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
