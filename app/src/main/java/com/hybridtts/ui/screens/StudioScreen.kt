@@ -24,15 +24,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -385,7 +385,7 @@ fun StudioScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Default.Layers, contentDescription = null, tint = AccentEmerald, modifier = Modifier.size(18.dp))
+                        Icon(imageVector = Icons.Default.Menu, contentDescription = null, tint = AccentEmerald, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("4-TRACK AUDIO TIMELINE & AUTO-DUCKING", color = AccentEmerald, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
@@ -460,7 +460,7 @@ fun StudioScreen() {
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Subtitles, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(16.dp))
+                    Icon(imageVector = Icons.Default.Description, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("MILLISECOND SUBTITLE EXPORTER", color = AccentCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
@@ -500,7 +500,7 @@ fun StudioScreen() {
                         val cues = SubtitleAligner.generateCuesFromScript(StudioStateManager.scriptText, ttsEngine.cachedDurationSeconds.coerceAtLeast(1.0))
                         val textContent = when (selectedSubtitleFormat) {
                             SubtitleFormat.SRT -> SubtitleAligner.buildSrt(cues)
-                            SubtitleFormat.VTT -> SubtitleAligner.buildVTT(cues)
+                            SubtitleFormat.VTT -> SubtitleAligner.buildVtt(cues)
                             SubtitleFormat.ASS -> SubtitleAligner.buildAss(cues)
                         }
 
