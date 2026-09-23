@@ -62,10 +62,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hybridtts.core.CloudTtsEngine
-import com.hybridtts.core.CustomLexiconRepository
 import com.hybridtts.core.HybridDirectorEngine
+import com.hybridtts.core.MultiSpeakerParser
 import com.hybridtts.core.NetworkMonitor
 import com.hybridtts.core.SherpaOnnxBridge
+import com.hybridtts.core.SpeakerRegistry
 import com.hybridtts.core.StudioStateManager
 import com.hybridtts.core.SynthesisResult
 import com.hybridtts.ui.theme.AccentCyan
@@ -78,6 +79,7 @@ import com.hybridtts.ui.theme.StatusWarning
 import com.hybridtts.ui.theme.TextPrimary
 import com.hybridtts.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.util.Locale
 
 @Composable
@@ -88,7 +90,7 @@ fun StudioScreen() {
     val hybridEngine = remember { HybridDirectorEngine.getInstance(context) }
     val offlineBridge = remember { SherpaOnnxBridge.getInstance(context) }
     val networkMonitor = remember { NetworkMonitor.getInstance(context) }
-    val lexiconRepo = remember { CustomLexiconRepository.getInstance(context) }
+    val speakerRegistry = remember { SpeakerRegistry.getInstance(context) }
 
     val isPlaying by ttsEngine.isPlayingState.collectAsState()
     val playbackProgress by ttsEngine.playbackProgressFraction.collectAsState()
@@ -108,7 +110,6 @@ fun StudioScreen() {
     val scrollState = rememberScrollState()
     val hasGeneratedAudio = ttsEngine.cachedPcmData != null
 
-    // Auto-Failover: If device is offline, enforce Engine 3
     val effectiveEngineMode = if (!isOnline) 2 else StudioStateManager.activeEngineMode
 
     Column(
@@ -118,7 +119,6 @@ fun StudioScreen() {
             .padding(16.dp)
             .verticalScroll(scrollState)
     ) {
-        // Offline Auto-Failover Alert Banner (Shows when Airplane Mode is on)
         if (!isOnline) {
             Surface(
                 modifier = Modifier
@@ -132,12 +132,7 @@ fun StudioScreen() {
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AirplanemodeActive,
-                        contentDescription = null,
-                        tint = AccentEmerald,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Icon(imageVector = Icons.Default.AirplanemodeActive, contentDescription = null, tint = AccentEmerald, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "AIRPLANE MODE DETECTED // ENGINE 3 ENGAGED",
@@ -150,7 +145,7 @@ fun StudioScreen() {
             }
         }
 
-        // Triple-Engine Mode Selector (Direct vs Hybrid vs Local Offline)
+        // Triple-Engine Mode Selector
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(10.dp),
@@ -163,75 +158,40 @@ fun StudioScreen() {
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Engine 1
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(
-                            if (effectiveEngineMode == 0) AccentCyan else DarkCard,
-                            RoundedCornerShape(8.dp)
-                        )
+                        .background(if (effectiveEngineMode == 0) AccentCyan else DarkCard, RoundedCornerShape(8.dp))
                         .clickable { StudioStateManager.activeEngineMode = 0 }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "E1: DIRECT",
-                        color = if (effectiveEngineMode == 0) PureBlack else TextSecondary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    Text("E1: DIRECT", color = if (effectiveEngineMode == 0) PureBlack else TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
 
-                // Engine 2
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(
-                            if (effectiveEngineMode == 1) AccentEmerald else DarkCard,
-                            RoundedCornerShape(8.dp)
-                        )
+                        .background(if (effectiveEngineMode == 1) AccentEmerald else DarkCard, RoundedCornerShape(8.dp))
                         .clickable { StudioStateManager.activeEngineMode = 1 }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "E2: HYBRID",
-                        color = if (effectiveEngineMode == 1) PureBlack else TextSecondary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    Text("E2: HYBRID", color = if (effectiveEngineMode == 1) PureBlack else TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                 }
 
-                // Engine 3: Local Offline
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(
-                            if (effectiveEngineMode == 2) AccentEmerald else DarkCard,
-                            RoundedCornerShape(8.dp)
-                        )
+                        .background(if (effectiveEngineMode == 2) AccentEmerald else DarkCard, RoundedCornerShape(8.dp))
                         .clickable { StudioStateManager.activeEngineMode = 2 }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Memory,
-                            contentDescription = null,
-                            tint = if (effectiveEngineMode == 2) PureBlack else TextSecondary,
-                            modifier = Modifier.size(12.dp)
-                        )
+                        Icon(imageVector = Icons.Default.Memory, contentDescription = null, tint = if (effectiveEngineMode == 2) PureBlack else TextSecondary, modifier = Modifier.size(12.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "E3: OFFLINE",
-                            color = if (effectiveEngineMode == 2) PureBlack else TextSecondary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Text("E3: OFFLINE", color = if (effectiveEngineMode == 2) PureBlack else TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                 }
             }
@@ -248,15 +208,10 @@ fun StudioScreen() {
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.RecordVoiceOver,
-                        contentDescription = null,
-                        tint = AccentEmerald,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Icon(imageVector = Icons.Default.RecordVoiceOver, contentDescription = null, tint = AccentEmerald, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (effectiveEngineMode == 2) "OFFLINE MODEL: KOKORO-82M (INT8)" else "VOICE CHARACTER SELECTION",
+                        text = if (effectiveEngineMode == 2) "OFFLINE MODEL: KOKORO-82M (INT8)" else "DEFAULT NARRATOR PROFILE",
                         color = AccentEmerald,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -283,7 +238,7 @@ fun StudioScreen() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (effectiveEngineMode == 2) "Kokoro-82M int8 (Cortex-A55 Pinned)" else "Active Voice: ${StudioStateManager.selectedVoice}",
+                                text = if (effectiveEngineMode == 2) "Kokoro-82M int8 (Cortex-A55 Pinned)" else "Voice: ${StudioStateManager.selectedVoice}",
                                 color = TextPrimary,
                                 fontSize = 12.sp,
                                 fontFamily = FontFamily.Monospace,
@@ -304,14 +259,7 @@ fun StudioScreen() {
                     ) {
                         CloudTtsEngine.ALL_30_VOICES.forEach { voice ->
                             DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = voice,
-                                        color = if (StudioStateManager.selectedVoice == voice) AccentEmerald else TextPrimary,
-                                        fontSize = 12.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                },
+                                text = { Text(voice, color = if (StudioStateManager.selectedVoice == voice) AccentEmerald else TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace) },
                                 onClick = {
                                     StudioStateManager.selectedVoice = voice
                                     isVoiceDropdownOpen = false
@@ -325,7 +273,7 @@ fun StudioScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Script Input Card
+        // Multi-Speaker Dialogue Script Composer
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -339,7 +287,7 @@ fun StudioScreen() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "SCRIPT COMPOSER",
+                        text = "MULTI-SPEAKER SCRIPT // COMPOSER",
                         color = AccentEmerald,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -360,7 +308,7 @@ fun StudioScreen() {
                     onValueChange = { StudioStateManager.scriptText = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(115.dp),
+                        .height(130.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
@@ -371,127 +319,98 @@ fun StudioScreen() {
                         cursorColor = AccentEmerald
                     ),
                     shape = RoundedCornerShape(10.dp),
-                    placeholder = { Text("Enter script or dialogue...", color = TextSecondary) }
+                    placeholder = { Text("Use [SPEAKER]: format for multi-voice dialogue...", color = TextSecondary) }
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text("Insert Quick Character Tag:", color = TextSecondary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("[NARRATOR]:", "[ELIAS]:", "[VALERIA]:", "[GUARD 1]:").forEach { tag ->
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = DarkSurface,
+                            border = BorderStroke(1.dp, BorderSubtle),
+                            modifier = Modifier.clickable {
+                                StudioStateManager.scriptText = "${StudioStateManager.scriptText}\n$tag "
+                            }
+                        ) {
+                            Text(tag, color = AccentCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                        }
+                    }
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Acoustic DSP Sliders Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkCard),
-            border = BorderStroke(1.dp, BorderSubtle)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = StatusWarning, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "ACOUSTIC DSP SPEED & PITCH",
-                        color = StatusWarning,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Speech Rate", color = TextSecondary, fontSize = 12.sp)
-                    Text(String.format(Locale.US, "%.2fx", StudioStateManager.speechRate), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                }
-                Slider(
-                    value = StudioStateManager.speechRate,
-                    onValueChange = { StudioStateManager.speechRate = it },
-                    valueRange = 0.5f..2.0f,
-                    colors = SliderDefaults.colors(thumbColor = AccentEmerald, activeTrackColor = AccentEmerald, inactiveTrackColor = BorderSubtle)
-                )
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Pitch Offset Semitones", color = TextSecondary, fontSize = 12.sp)
-                    Text(String.format(Locale.US, "%+.1f st", StudioStateManager.pitchOffset), color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                }
-                Slider(
-                    value = StudioStateManager.pitchOffset,
-                    onValueChange = { StudioStateManager.pitchOffset = it },
-                    valueRange = -6.0f..6.0f,
-                    colors = SliderDefaults.colors(thumbColor = AccentCyan, activeTrackColor = AccentCyan, inactiveTrackColor = BorderSubtle)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Master Synthesize Action Button
+        // Synthesize Button: Supports Dynamic Multi-Speaker Rendering
         Button(
             onClick = {
                 if (isGenerating) return@Button
-                StudioStateManager.playbackStatusText = "Synthesizing audio..."
+                StudioStateManager.playbackStatusText = "Parsing dialogue lines..."
 
                 scope.launch {
-                    val result = when (effectiveEngineMode) {
-                        2 -> {
-                            // Engine 3: 100% Fully Local Offline Synthesis
-                            val offlineResult = offlineBridge.synthesizeOffline(
-                                rawText = StudioStateManager.scriptText,
-                                numThreads = 2,
-                                speedRate = StudioStateManager.speechRate,
-                                pitchSemitones = StudioStateManager.pitchOffset
+                    val dialogueLines = MultiSpeakerParser.parseDialogue(StudioStateManager.scriptText)
+
+                    if (dialogueLines.size > 1 && effectiveEngineMode != 2) {
+                        // Multi-Speaker Synthesis: Renders each character line using their assigned voice
+                        StudioStateManager.playbackStatusText = "Rendering ${dialogueLines.size} multi-character lines..."
+                        val compositeStream = ByteArrayOutputStream()
+
+                        for ((idx, line) in dialogueLines.withIndex()) {
+                            val assignedVoice = speakerRegistry.getVoiceForCharacter(line.speakerTag)
+                            StudioStateManager.playbackStatusText = "Rendering [${line.speakerTag}] with $assignedVoice (${idx + 1}/${dialogueLines.size})..."
+
+                            val result = ttsEngine.synthesizeMaster(
+                                text = line.spokenText,
+                                voiceName = assignedVoice,
+                                temperature = StudioStateManager.temperature
                             )
-                            when (offlineResult) {
-                                is SynthesisResult.Success -> {
-                                    val renderedPcm = offlineBridge.synthesizeOffline(StudioStateManager.scriptText, 2)
-                                    // Feed into audio player cache
-                                    ttsEngine.cachedDurationSeconds = offlineResult.durationSeconds
-                                    SynthesisResult.Success(24000, offlineResult.durationSeconds)
+
+                            if (result is SynthesisResult.Success) {
+                                val pcm = ttsEngine.cachedPcmData
+                                if (pcm != null) {
+                                    compositeStream.write(pcm)
+                                    // 120ms pause between speakers
+                                    compositeStream.write(ByteArray(CloudTtsEngine.SAMPLE_RATE_24K * 2 * 120 / 1000))
                                 }
-                                is SynthesisResult.Error -> offlineResult
                             }
                         }
-                        1 -> {
-                            // Engine 2: Cloud Hybrid with Gemini AI Voice Director
-                            hybridEngine.executeHybridProduction(
-                                script = StudioStateManager.scriptText,
-                                voiceName = StudioStateManager.selectedVoice,
-                                audioProfile = StudioStateManager.audioProfileText,
-                                styleNote = StudioStateManager.selectedStyle,
-                                temperature = StudioStateManager.temperature,
-                                onStatusUpdate = { update ->
-                                    StudioStateManager.directorAnalysisSummary = update
-                                    StudioStateManager.playbackStatusText = update
-                                }
-                            )
+
+                        val masterPcm = compositeStream.toByteArray()
+                        if (masterPcm.isNotEmpty()) {
+                            ttsEngine.loadExternalMasterAudio(masterPcm)
+                            StudioStateManager.playbackStatusText = String.format(Locale.US, "Multi-Cast Master Ready (%.1fs). Tap Play.", ttsEngine.cachedDurationSeconds)
+                            Toast.makeText(context, "Multi-character master assembled!", Toast.LENGTH_SHORT).show()
                         }
-                        else -> {
-                            // Engine 1: Direct Cloud TTS
+                    } else {
+                        // Single-Speaker or Offline Synthesis
+                        val result = if (effectiveEngineMode == 2) {
+                            offlineBridge.synthesizeOffline(StudioStateManager.scriptText, 2)
+                        } else {
                             ttsEngine.synthesizeMaster(
                                 text = StudioStateManager.scriptText,
                                 voiceName = StudioStateManager.selectedVoice,
-                                audioProfile = StudioStateManager.audioProfileText,
-                                styleNote = StudioStateManager.selectedStyle,
-                                paceNote = StudioStateManager.selectedPace,
-                                accentNote = StudioStateManager.selectedAccent,
                                 temperature = StudioStateManager.temperature
                             )
                         }
-                    }
 
-                    when (result) {
-                        is SynthesisResult.Success -> {
-                            StudioStateManager.playbackStatusText = String.format(
-                                Locale.US,
-                                "Master Ready (%.1fs). Tap Play below.",
-                                result.durationSeconds
-                            )
-                            Toast.makeText(context, "Synthesis complete! Tap Play.", Toast.LENGTH_SHORT).show()
-                        }
-                        is SynthesisResult.Error -> {
-                            StudioStateManager.playbackStatusText = "Synthesis notice. Check Settings!"
-                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                        when (result) {
+                            is SynthesisResult.Success -> {
+                                StudioStateManager.playbackStatusText = String.format(Locale.US, "Master Ready (%.1fs). Tap Play.", result.durationSeconds)
+                                Toast.makeText(context, "Synthesis complete! Tap Play.", Toast.LENGTH_SHORT).show()
+                            }
+                            is SynthesisResult.Error -> {
+                                StudioStateManager.playbackStatusText = "Synthesis error. Check Settings!"
+                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                 }
@@ -511,16 +430,12 @@ fun StudioScreen() {
             if (isGenerating) {
                 CircularProgressIndicator(color = AccentEmerald, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("SYNTHESIZING...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                Text("RENDERING MULTI-SPEAKER CAST...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             } else {
                 Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = when (effectiveEngineMode) {
-                        2 -> "SYNTHESIZE OFFLINE (ENGINE 3)"
-                        1 -> "SYNTHESIZE VIA VOICE DIRECTOR"
-                        else -> "SYNTHESIZE DIRECT CLOUD"
-                    },
+                    text = if (effectiveEngineMode == 2) "SYNTHESIZE OFFLINE (ENGINE 3)" else "SYNTHESIZE CAST PRODUCTION",
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp
@@ -579,19 +494,14 @@ fun StudioScreen() {
                                 .size(36.dp)
                                 .background(DarkSurface, CircleShape)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Stop,
-                                contentDescription = "Stop",
-                                tint = if (hasGeneratedAudio) TextPrimary else TextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            Icon(imageVector = Icons.Default.Stop, contentDescription = "Stop", tint = if (hasGeneratedAudio) TextPrimary else TextSecondary, modifier = Modifier.size(18.dp))
                         }
                     }
 
                     Button(
                         onClick = {
                             if (!hasGeneratedAudio) return@Button
-                            val result = ttsEngine.saveAudioToDownloads("HybridTTS_Master")
+                            val result = ttsEngine.saveAudioToDownloads("HybridTTS_CastMaster")
                             result.fold(
                                 onSuccess = { Toast.makeText(context, "Saved to Downloads/HybridTTS/", Toast.LENGTH_LONG).show() },
                                 onFailure = { err -> Toast.makeText(context, "Export error: ${err.localizedMessage}", Toast.LENGTH_SHORT).show() }
